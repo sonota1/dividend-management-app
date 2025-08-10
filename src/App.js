@@ -1,149 +1,148 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from "react";
 
-const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
-const YAHOO_API_BASE = 'https://query1.finance.yahoo.com/v7/finance/quote?symbols=';
-
-// 30分キャッシュ用
-const cache = {};
-
-// タグ選択肢
-const TAG_OPTIONS = ['NISA', '特定', '一般'];
-
-// 並べ替え選択肢
+const TAG_OPTIONS = ["NISA", "特定", "一般"];
 const SORT_OPTIONS = [
-  { key: 'name_asc', label: '銘柄名昇順' },
-  { key: 'name_desc', label: '銘柄名降順' },
-  { key: 'yield_desc', label: '配当利回り順' },
-  { key: 'shares_desc', label: '保有株数順' },
-  { key: 'price_change_desc', label: '値上がり率' },
+  { key: "name_asc", label: "銘柄名昇順" },
+  { key: "name_desc", label: "銘柄名降順" },
+  { key: "yield_desc", label: "配当利回り順" },
+  { key: "shares_desc", label: "保有株数順" },
+  { key: "price_change_desc", label: "値上がり率" },
 ];
 
-// セクターはAPIから取得（簡易版）
-const getSectorFromAPI = (data) => data?.quoteType === 'EQUITY' ? data.sector || '不明' : '不明';
+async function fetchStockInfo(symbol) {
+  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("APIエラー");
+    const data = await res.json();
+    const quote = data?.quoteResponse?.result?.[0];
+    if (!quote) throw new Error("銘柄情報が見つかりません");
 
-const fetchStockData = async (symbol) => {
-  const now = Date.now();
-  if (cache[symbol] && now - cache[symbol].timestamp < 30 * 60 * 1000) {
-    return cache[symbol].data;
+    return {
+      currentPrice: quote.regularMarketPrice ?? null,
+      dividendYield: quote.dividendYield ? quote.dividendYield * 100 : null,
+      dividendRate: quote.dividendRate ?? null,
+      priceChangePercent: quote.regularMarketChangePercent ?? null,
+      name: quote.shortName ?? "",
+      sector: quote?.sector ?? "",
+    };
+  } catch (e) {
+    console.error("Yahoo Finance取得エラー:", e.message);
+    return null;
   }
+}
 
-  const url = CORS_PROXY + YAHOO_API_BASE + symbol;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('API取得失敗');
-  const json = await res.json();
-  if (json.quoteResponse.result.length === 0) throw new Error('銘柄が見つかりません');
-
-  const stock = json.quoteResponse.result[0];
-  const data = {
-    symbol: stock.symbol,
-    shortName: stock.shortName,
-    currentPrice: stock.regularMarketPrice,
-    dividendYield: stock.dividendYield || 0,
-    dividendRate: stock.dividendRate || 0,
-    sector: stock.sector || '不明',
-    priceChangePercent: stock.regularMarketChangePercent || 0,
-  };
-  cache[symbol] = { data, timestamp: now };
-  return data;
-};
-
-export default function StockApp() {
-  const [symbolInput, setSymbolInput] = useState('');
-  const [sharesInput, setSharesInput] = useState('');
-  const [tagInput, setTagInput] = useState(TAG_OPTIONS[0]);
+export default function SakuraiStyledStockApp() {
   const [stocks, setStocks] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [sortKey, setSortKey] = useState('name_asc');
+  const [form, setForm] = useState({
+    symbol: "",
+    shares: "",
+    purchasePrice: "",
+    tag: TAG_OPTIONS[0],
+  });
+  const [sortKey, setSortKey] = useState("name_asc");
   const [editStock, setEditStock] = useState(null);
+  const [loadingSymbol, setLoadingSymbol] = useState(null);
+  const [error, setError] = useState("");
 
-  // 銘柄追加
   const addStock = async () => {
-    setError('');
-    const symbol = symbolInput.trim().toUpperCase();
-    const shares = Number(sharesInput);
+    setError("");
+    const symbol = form.symbol.trim().toUpperCase();
+    const shares = Number(form.shares);
+    const purchasePrice = Number(form.purchasePrice);
 
     if (!symbol) {
-      setError('銘柄コードを入力してください');
+      setError("銘柄コードは必須です");
       return;
     }
     if (!shares || shares <= 0) {
-      setError('保有株数は正の数を入力してください');
+      setError("保有株数は正の数で入力してください");
       return;
     }
     if (stocks.find((s) => s.symbol === symbol)) {
-      setError('既に追加済みの銘柄です');
+      setError("既に同じ銘柄コードがあります");
       return;
     }
 
-    try {
-      setLoading(true);
-      const data = await fetchStockData(symbol);
-      setStocks((prev) => [
-        ...prev,
-        {
-          symbol: data.symbol,
-          name: data.shortName,
-          shares,
-          currentPrice: data.currentPrice,
-          dividendYield: data.dividendYield,
-          dividendRate: data.dividendRate,
-          sector: data.sector,
-          tag: tagInput,
-          priceChangePercent: data.priceChangePercent,
-        },
-      ]);
-      setSymbolInput('');
-      setSharesInput('');
-      setTagInput(TAG_OPTIONS[0]);
-    } catch (e) {
-      setError(e.message || '銘柄情報の取得に失敗しました');
-    } finally {
-      setLoading(false);
+    setLoadingSymbol(symbol);
+    const stockInfo = await fetchStockInfo(symbol);
+    setLoadingSymbol(null);
+
+    if (!stockInfo) {
+      setError("株価情報が取得できませんでした。手入力で登録してください。");
+      return;
     }
+
+    setStocks((prev) => [
+      ...prev,
+      {
+        symbol,
+        name: stockInfo.name || symbol,
+        shares,
+        purchasePrice: purchasePrice || 0,
+        currentPrice: stockInfo.currentPrice || 0,
+        dividendYield: stockInfo.dividendYield ?? 0,
+        dividendRate: stockInfo.dividendRate ?? 0,
+        sector: stockInfo.sector || "",
+        tag: form.tag,
+        priceChangePercent: stockInfo.priceChangePercent ?? 0,
+      },
+    ]);
+    setForm({ symbol: "", shares: "", purchasePrice: "", tag: TAG_OPTIONS[0] });
   };
 
-  // 銘柄削除
-  const deleteStock = (symbol) => {
-    if (window.confirm(`${symbol} を削除しますか？`)) {
-      setStocks((prev) => prev.filter((s) => s.symbol !== symbol));
-    }
-  };
-
-  // 編集開始
   const startEdit = (stock) => {
     setEditStock({ ...stock });
+    setError("");
   };
 
-  // 編集保存
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editStock.symbol || !editStock.shares || editStock.shares <= 0) {
-      alert('銘柄コードと正の保有株数が必要です');
+      setError("銘柄コード、保有株数は必須で、株数は正の数です");
       return;
     }
+    setLoadingSymbol(editStock.symbol);
+    const stockInfo = await fetchStockInfo(editStock.symbol);
+    setLoadingSymbol(null);
+
+    if (stockInfo) {
+      editStock.currentPrice = stockInfo.currentPrice ?? editStock.currentPrice ?? 0;
+      editStock.dividendYield = stockInfo.dividendYield ?? editStock.dividendYield ?? 0;
+      editStock.dividendRate = stockInfo.dividendRate ?? editStock.dividendRate ?? 0;
+      editStock.sector = stockInfo.sector || editStock.sector || "";
+      editStock.priceChangePercent = stockInfo.priceChangePercent ?? editStock.priceChangePercent ?? 0;
+      editStock.name = stockInfo.name || editStock.name;
+    }
+
     setStocks((prev) =>
-      prev.map((s) => (s.symbol === editStock.symbol ? { ...s, shares: Number(editStock.shares), tag: editStock.tag } : s))
+      prev.map((s) => (s.symbol === editStock.symbol ? { ...editStock, shares: Number(editStock.shares) } : s))
     );
     setEditStock(null);
+    setError("");
   };
 
-  // 編集キャンセル
   const cancelEdit = () => {
     setEditStock(null);
+    setError("");
   };
 
-  // 並べ替え適用
+  const deleteStock = (symbol) => {
+    if (window.confirm(`${symbol} を削除しますか？`)) {
+      setStocks(stocks.filter((s) => s.symbol !== symbol));
+    }
+  };
+
   const sortedStocks = [...stocks].sort((a, b) => {
     switch (sortKey) {
-      case 'name_asc':
+      case "name_asc":
         return a.name.localeCompare(b.name);
-      case 'name_desc':
+      case "name_desc":
         return b.name.localeCompare(a.name);
-      case 'yield_desc':
+      case "yield_desc":
         return b.dividendYield - a.dividendYield;
-      case 'shares_desc':
+      case "shares_desc":
         return b.shares - a.shares;
-      case 'price_change_desc':
+      case "price_change_desc":
         return b.priceChangePercent - a.priceChangePercent;
       default:
         return 0;
@@ -151,235 +150,503 @@ export default function StockApp() {
   });
 
   return (
-    <div style={{ maxWidth: 800, margin: 'auto', fontFamily: 'Arial, sans-serif' }}>
-      <h2>銘柄追加・管理（Yahoo Finance API + キャッシュ）</h2>
+    <div
+      style={{
+        maxWidth: 920,
+        margin: "40px auto",
+        fontFamily: '"Segoe UI", "Yu Gothic", "ヒラギノ角ゴシック", sans-serif',
+        color: "#333",
+        lineHeight: 1.7,
+        userSelect: "none",
+      }}
+    >
+      <h1
+        style={{
+          fontWeight: "700",
+          fontSize: 26,
+          letterSpacing: 0.1,
+          marginBottom: 24,
+          textAlign: "center",
+          color: "#1a237e",
+          userSelect: "text",
+        }}
+      >
+        銘柄管理アプリ (桜井政博風UI)
+      </h1>
 
-      {/* 銘柄追加フォーム */}
-      <div style={{ marginBottom: 16, border: '1px solid #ccc', padding: 12, borderRadius: 8 }}>
-        <h3>銘柄追加</h3>
-        <input
-          placeholder="銘柄コード (例: AAPL)"
-          value={symbolInput}
-          onChange={(e) => setSymbolInput(e.target.value)}
-          disabled={loading}
-          style={{ padding: 6, marginRight: 8, width: '30%' }}
-        />
-        <input
-          type="number"
-          placeholder="保有株数"
-          value={sharesInput}
-          onChange={(e) => setSharesInput(e.target.value)}
-          disabled={loading}
-          style={{ padding: 6, marginRight: 8, width: '20%' }}
-        />
-        <select
-          value={tagInput}
-          onChange={(e) => setTagInput(e.target.value)}
-          disabled={loading}
-          style={{ padding: 6, marginRight: 8 }}
+      <section
+        style={{
+          backgroundColor: "#fafafa",
+          padding: 18,
+          borderRadius: 12,
+          boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+          marginBottom: 32,
+          border: "1px solid #e3e3e3",
+        }}
+      >
+        <h2 style={{ fontWeight: 600, fontSize: 18, marginBottom: 14, color: "#303f9f" }}>銘柄追加</h2>
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
         >
-          {TAG_OPTIONS.map((tag) => (
-            <option key={tag} value={tag}>
-              {tag}
-            </option>
-          ))}
-        </select>
-        <button onClick={addStock} disabled={loading}>
-          追加
-        </button>
-        {error && <div style={{ color: 'red', marginTop: 8 }}>{error}</div>}
-      </div>
+          <input
+            placeholder="銘柄コード (例: AAPL)"
+            value={form.symbol}
+            onChange={(e) => setForm({ ...form, symbol: e.target.value.toUpperCase() })}
+            style={{
+              padding: "8px 14px",
+              fontSize: 15,
+              borderRadius: 6,
+              border: "1px solid #cfd8dc",
+              outline: "none",
+              width: 140,
+              color: "#1a237e",
+              fontWeight: 600,
+              letterSpacing: 0.05,
+              boxShadow: loadingSymbol === form.symbol ? "0 0 8px #7986cb" : "none",
+              transition: "box-shadow 0.3s ease",
+              userSelect: "text",
+            }}
+            disabled={loadingSymbol !== null}
+          />
+          <input
+            type="number"
+            placeholder="保有株数"
+            value={form.shares}
+            onChange={(e) => setForm({ ...form, shares: e.target.value })}
+            style={{
+              padding: "8px 14px",
+              fontSize: 15,
+              borderRadius: 6,
+              border: "1px solid #cfd8dc",
+              outline: "none",
+              width: 110,
+              userSelect: "text",
+            }}
+            disabled={loadingSymbol !== null}
+          />
+          <input
+            type="number"
+            placeholder="取得価格"
+            value={form.purchasePrice}
+            onChange={(e) => setForm({ ...form, purchasePrice: e.target.value })}
+            style={{
+              padding: "8px 14px",
+              fontSize: 15,
+              borderRadius: 6,
+              border: "1px solid #cfd8dc",
+              outline: "none",
+              width: 120,
+              userSelect: "text",
+            }}
+            disabled={loadingSymbol !== null}
+            step="0.01"
+          />
+          <select
+            value={form.tag}
+            onChange={(e) => setForm({ ...form, tag: e.target.value })}
+            style={{
+              padding: "8px 14px",
+              fontSize: 15,
+              borderRadius: 6,
+              border: "1px solid #cfd8dc",
+              outline: "none",
+              width: 100,
+              userSelect: "text",
+              color: "#1a237e",
+              fontWeight: 600,
+              letterSpacing: 0.03,
+              backgroundColor: "#f5f7fa",
+            }}
+            disabled={loadingSymbol !== null}
+          >
+            {TAG_OPTIONS.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={addStock}
+            disabled={loadingSymbol !== null}
+            style={{
+              padding: "9px 22px",
+              fontSize: 15,
+              borderRadius: 8,
+              border: "none",
+              backgroundColor: loadingSymbol !== null ? "#a3bffa" : "#3949ab",
+              color: "#fff",
+              fontWeight: "700",
+              cursor: loadingSymbol !== null ? "not-allowed" : "pointer",
+              transition: "background-color 0.25s ease",
+              userSelect: "none",
+              boxShadow: loadingSymbol !== null ? "none" : "0 2px 6px rgba(57,73,171,0.5)",
+            }}
+          >
+            {loadingSymbol === form.symbol ? "取得中..." : "追加"}
+          </button>
+        </div>
+        {error && (
+          <p
+            style={{
+              color: "#d32f2f",
+              marginTop: 14,
+              fontWeight: 600,
+              fontSize: 14,
+              userSelect: "text",
+            }}
+          >
+            {error}
+          </p>
+        )}
+      </section>
 
-      {/* 並べ替え */}
-      <div style={{ marginBottom: 12 }}>
-        <label>並べ替え: </label>
-        <select value={sortKey} onChange={(e) => setSortKey(e.target.value)} style={{ padding: 6 }}>
+      <section style={{ marginBottom: 20, userSelect: "none" }}>
+        <label
+          htmlFor="sort-select"
+          style={{
+            fontWeight: 600,
+            fontSize: 15,
+            marginRight: 14,
+            color: "#455a64",
+            userSelect: "text",
+          }}
+        >
+          並べ替え:
+        </label>
+        <select
+          id="sort-select"
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value)}
+          style={{
+            padding: "7px 14px",
+            fontSize: 15,
+            borderRadius: 6,
+            border: "1px solid #cfd8dc",
+            outline: "none",
+            width: 180,
+            userSelect: "text",
+            backgroundColor: "#f5f7fa",
+            color: "#1a237e",
+            fontWeight: 600,
+            letterSpacing: 0.03,
+          }}
+        >
           {SORT_OPTIONS.map(({ key, label }) => (
             <option key={key} value={key}>
               {label}
             </option>
           ))}
         </select>
-      </div>
+      </section>
 
-      {/* 銘柄一覧 */}
-      <table
-        border="1"
-        cellPadding="6"
-        style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 24, textAlign: 'center' }}
-      >
-        <thead style={{ backgroundColor: '#f0f0f0' }}>
-          <tr>
-            <th>銘柄コード</th>
-            <th>銘柄名</th>
-            <th>保有株数</th>
-            <th>現在価格</th>
-            <th>配当利回り</th>
-            <th>配当金(年率)</th>
-            <th>評価額</th>
-            <th>セクター</th>
-            <th>タグ</th>
-            <th>値上がり率(%)</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sortedStocks.map((stock) =>
-            editStock && editStock.symbol === stock.symbol ? (
-              <tr key={stock.symbol} style={{ backgroundColor: '#fff3cd' }}>
-                <td>{stock.symbol}</td>
-                <td>{stock.name}</td>
-                <td>
-                  <input
-                    type="number"
-                    value={editStock.shares}
-                    onChange={(e) => setEditStock({ ...editStock, shares: e.target.value })}
-                    style={{ width: 70 }}
-                  />
-                </td>
-                <td>{stock.currentPrice?.toLocaleString() ?? '-'}</td>
-                <td>{stock.dividendYield ? (stock.dividendYield * 100).toFixed(2) + '%' : '-'}</td>
-                <td>{stock.dividendRate ? stock.dividendRate.toFixed(2) : '-'}</td>
-                <td>{stock.currentPrice ? (editStock.shares * stock.currentPrice).toLocaleString() : '-'}</td>
-                <td>{stock.sector}</td>
-                <td>
-                  <select
-                    value={editStock.tag}
-                    onChange={(e) => setEditStock({ ...editStock, tag: e.target.value })}
-                    style={{ width: 70 }}
+      <section style={{ overflowX: "auto" }}>
+        <table
+          style={{
+            width: "100%",
+            borderCollapse: "separate",
+            borderSpacing: "0 8px",
+            userSelect: "none",
+          }}
+        >
+          <thead>
+            <tr
+              style={{
+                backgroundColor: "#e8eaf6",
+                textAlign: "center",
+                fontWeight: 600,
+                fontSize: 14,
+                color: "#3949ab",
+                userSelect: "text",
+              }}
+            >
+              <th style={{ padding: "12px 14px", borderRadius: "8px 0 0 8px" }}>銘柄コード</th>
+              <th style={{ padding: "12px 14px" }}>銘柄名</th>
+              <th style={{ padding: "12px 14px" }}>保有株数</th>
+              <th style={{ padding: "12px 14px" }}>取得価格</th>
+              <th style={{ padding: "12px 14px" }}>現在価格</th>
+              <th style={{ padding: "12px 14px" }}>配当利回り(%)</th>
+              <th style={{ padding: "12px 14px" }}>配当金(年率)</th>
+              <th style={{ padding: "12px 14px" }}>セクター</th>
+              <th style={{ padding: "12px 14px" }}>タグ</th>
+              <th style={{ padding: "12px 14px" }}>値上がり率(%)</th>
+              <th
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: "0 8px 8px 0",
+                  minWidth: 130,
+                }}
+              >
+                操作
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedStocks.map((stock) =>
+              editStock && editStock.symbol === stock.symbol ? (
+                <tr
+                  key={stock.symbol}
+                  style={{
+                    backgroundColor: "#fff8e1",
+                    fontWeight: 600,
+                    fontSize: 14,
+                    color: "#212121",
+                  }}
+                >
+                  <td style={{ padding: "10px 14px" }}>{stock.symbol}</td>
+                  <td style={{ padding: "10px 14px" }}>{stock.name}</td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <input
+                      type="number"
+                      value={editStock.shares}
+                      onChange={(e) => setEditStock({ ...editStock, shares: e.target.value })}
+                      style={{
+                        width: 70,
+                        borderRadius: 6,
+                        border: "1px solid #cfd8dc",
+                        padding: "6px 10px",
+                        fontSize: 14,
+                        outline: "none",
+                      }}
+                    />
+                  </td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <input
+                      type="number"
+                      value={editStock.purchasePrice}
+                      onChange={(e) => setEditStock({ ...editStock, purchasePrice: e.target.value })}
+                      style={{
+                        width: 90,
+                        borderRadius: 6,
+                        border: "1px solid #cfd8dc",
+                        padding: "6px 10px",
+                        fontSize: 14,
+                        outline: "none",
+                      }}
+                      step="0.01"
+                    />
+                  </td>
+                  <td style={{ padding: "10px 14px" }}>
+                    {stock.currentPrice ? Number(stock.currentPrice).toLocaleString() : "-"}
+                  </td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <input
+                      type="number"
+                      value={editStock.dividendYield}
+                      onChange={(e) => setEditStock({ ...editStock, dividendYield: e.target.value })}
+                      style={{
+                        width: 90,
+                        borderRadius: 6,
+                        border: "1px solid #cfd8dc",
+                        padding: "6px 10px",
+                        fontSize: 14,
+                        outline: "none",
+                      }}
+                      step="0.01"
+                    />
+                  </td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <input
+                      type="number"
+                      value={editStock.dividendRate}
+                      onChange={(e) => setEditStock({ ...editStock, dividendRate: e.target.value })}
+                      style={{
+                        width: 90,
+                        borderRadius: 6,
+                        border: "1px solid #cfd8dc",
+                        padding: "6px 10px",
+                        fontSize: 14,
+                        outline: "none",
+                      }}
+                      step="0.01"
+                    />
+                  </td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <input
+                      value={editStock.sector}
+                      onChange={(e) => setEditStock({ ...editStock, sector: e.target.value })}
+                      style={{
+                        width: 120,
+                        borderRadius: 6,
+                        border: "1px solid #cfd8dc",
+                        padding: "6px 10px",
+                        fontSize: 14,
+                        outline: "none",
+                      }}
+                    />
+                  </td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <select
+                      value={editStock.tag}
+                      onChange={(e) => setEditStock({ ...editStock, tag: e.target.value })}
+                      style={{
+                        width: 100,
+                        borderRadius: 6,
+                        border: "1px solid #cfd8dc",
+                        padding: "6px 10px",
+                        fontSize: 14,
+                        outline: "none",
+                        color: "#1a237e",
+                        fontWeight: 600,
+                        backgroundColor: "#f5f7fa",
+                      }}
+                    >
+                      {TAG_OPTIONS.map((tag) => (
+                        <option key={tag} value={tag}>
+                          {tag}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <input
+                      type="number"
+                      value={editStock.priceChangePercent}
+                      onChange={(e) => setEditStock({ ...editStock, priceChangePercent: e.target.value })}
+                      style={{
+                        width: 90,
+                        borderRadius: 6,
+                        border: "1px solid #cfd8dc",
+                        padding: "6px 10px",
+                        fontSize: 14,
+                        outline: "none",
+                      }}
+                      step="0.01"
+                    />
+                  </td>
+                  <td
+                    style={{
+                      padding: "10px 14px",
+                      display: "flex",
+                      gap: 10,
+                      justifyContent: "center",
+                    }}
                   >
-                    {TAG_OPTIONS.map((tag) => (
-                      <option key={tag} value={tag}>
-                        {tag}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td>{stock.priceChangePercent.toFixed(2)}</td>
-                <td>
-                  <button onClick={saveEdit} style={{ marginRight: 4 }}>
-                    保存
-                  </button>
-                  <button onClick={cancelEdit}>キャンセル</button>
-                </td>
-              </tr>
-            ) : (
-              <tr key={stock.symbol}>
-                <td>{stock.symbol}</td>
-                <td>{stock.name}</td>
-                <td>{stock.shares}</td>
-                <td>{stock.currentPrice?.toLocaleString() ?? '-'}</td>
-                <td>{stock.dividendYield ? (stock.dividendYield * 100).toFixed(2) + '%' : '-'}</td>
-                <td>{stock.dividendRate ? stock.dividendRate.toFixed(2) : '-'}</td>
-                <td>{stock.currentPrice ? (stock.shares * stock.currentPrice).toLocaleString() : '-'}</td>
-                <td>{stock.sector}</td>
-                <td>{stock.tag}</td>
-                <td>{stock.priceChangePercent.toFixed(2)}</td>
-                <td>
-                  <button onClick={() => startEdit(stock)} style={{ marginRight: 4 }}>
-                    編集
-                  </button>
-                  <button onClick={() => deleteStock(stock.symbol)}>削除</button>
-                </td>
-              </tr>
-            )
-          )}
-        </tbody>
-      </table>
-
-      {/* 総資産・配当サマリー */}
-      <SummaryCard stocks={stocks} />
-
-      {/* 月別配当グラフ */}
-      <MonthlyDividendChart stocks={stocks} />
-
-      {/* 配当推移グラフ */}
-      <DividendTrendChart stocks={stocks} />
-    </div>
-  );
-}
-
-// ----------- 総資産・配当サマリーコンポーネント -----------
-function SummaryCard({ stocks }) {
-  const totalValue = stocks.reduce((acc, s) => acc + s.currentPrice * s.shares, 0);
-  const totalDividends = stocks.reduce((acc, s) => acc + s.dividendRate * s.shares, 0);
-
-  return (
-    <div style={{ marginBottom: 24, padding: 12, border: '1px solid #aaa', borderRadius: 8, backgroundColor: '#e3f2fd' }}>
-      <h3>総資産・配当サマリー</h3>
-      <div style={{ display: 'flex', justifyContent: 'space-around' }}>
-        <div>
-          <strong>総資産評価額</strong>
-          <div style={{ fontSize: '1.5rem', color: '#1565c0' }}>{totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} 円</div>
-        </div>
-        <div>
-          <strong>年間配当予想</strong>
-          <div style={{ fontSize: '1.5rem', color: '#2e7d32' }}>{totalDividends.toFixed(2)} 円</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ----------- 月別配当グラフコンポーネント（簡易） -----------
-function MonthlyDividendChart({ stocks }) {
-  // 簡単に今月だけ年間配当÷12として表示するだけに留める
-  if (stocks.length === 0) return null;
-
-  // 月別配当配列（12ヶ月分に均等割り）
-  const monthlyDividends = Array(12).fill(0);
-  stocks.forEach((s) => {
-    const monthly = (s.dividendRate * s.shares) / 12;
-    for (let i = 0; i < 12; i++) monthlyDividends[i] += monthly;
-  });
-
-  return (
-    <div style={{ marginBottom: 24, padding: 12, border: '1px solid #aaa', borderRadius: 8, backgroundColor: '#fff3e0' }}>
-      <h3>月別配当（年間配当を均等割り）</h3>
-      <div style={{ display: 'flex', justifyContent: 'space-around' }}>
-        {monthlyDividends.map((val, i) => (
-          <div key={i} style={{ textAlign: 'center' }}>
-            <div style={{ fontWeight: 'bold' }}>{i + 1}月</div>
-            <div>{val.toFixed(2)}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ----------- 配当推移グラフコンポーネント（簡易） -----------
-function DividendTrendChart({ stocks }) {
-  // 過去数年分の推移などの本格的なグラフは難しいので、配当率の平均値を年毎にプロットする簡易版として実装可能
-
-  if (stocks.length === 0) return null;
-
-  // 仮に3年分を現在配当利回りで固定としてプロット
-  const years = [2023, 2024, 2025];
-  const avgDividendYield =
-    stocks.reduce((acc, s) => acc + (s.dividendYield || 0), 0) / stocks.length;
-
-  return (
-    <div style={{ marginBottom: 24, padding: 12, border: '1px solid #aaa', borderRadius: 8, backgroundColor: '#e8f5e9' }}>
-      <h3>配当推移（仮・平均配当利回り）</h3>
-      <table style={{ width: '100%', textAlign: 'center', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            <th>年</th>
-            {years.map((y) => (
-              <th key={y}>{y}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>平均配当利回り(%)</td>
-            {years.map((y) => (
-              <td key={y}>{(avgDividendYield * 100).toFixed(2)}</td>
-            ))}
-          </tr>
-        </tbody>
-      </table>
+                    <button
+                      onClick={saveEdit}
+                      disabled={loadingSymbol !== null}
+                      style={{
+                        padding: "6px 18px",
+                        fontSize: 14,
+                        borderRadius: 6,
+                        border: "none",
+                        backgroundColor: "#3949ab",
+                        color: "#fff",
+                        fontWeight: 700,
+                        cursor: loadingSymbol !== null ? "not-allowed" : "pointer",
+                        userSelect: "none",
+                        boxShadow: "0 2px 5px rgba(57,73,171,0.5)",
+                        transition: "background-color 0.3s ease",
+                      }}
+                    >
+                      保存
+                    </button>
+                    <button
+                      onClick={cancelEdit}
+                      disabled={loadingSymbol !== null}
+                      style={{
+                        padding: "6px 18px",
+                        fontSize: 14,
+                        borderRadius: 6,
+                        border: "1px solid #cfd8dc",
+                        backgroundColor: "#fff",
+                        color: "#455a64",
+                        fontWeight: 700,
+                        cursor: loadingSymbol !== null ? "not-allowed" : "pointer",
+                        userSelect: "none",
+                      }}
+                    >
+                      キャンセル
+                    </button>
+                  </td>
+                </tr>
+              ) : (
+                <tr
+                  key={stock.symbol}
+                  style={{
+                    backgroundColor: "#f9f9fb",
+                    fontSize: 14,
+                    color: "#212121",
+                    fontWeight: 600,
+                    userSelect: "text",
+                  }}
+                >
+                  <td style={{ padding: "10px 14px", textAlign: "center" }}>{stock.symbol}</td>
+                  <td style={{ padding: "10px 14px", textAlign: "left" }}>{stock.name}</td>
+                  <td style={{ padding: "10px 14px", textAlign: "right" }}>{stock.shares}</td>
+                  <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                    {stock.purchasePrice ? Number(stock.purchasePrice).toLocaleString() : "-"}
+                  </td>
+                  <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                    {stock.currentPrice ? Number(stock.currentPrice).toLocaleString() : "-"}
+                  </td>
+                  <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                    {stock.dividendYield ? Number(stock.dividendYield).toFixed(2) : "-"}
+                  </td>
+                  <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                    {stock.dividendRate ? Number(stock.dividendRate).toFixed(2) : "-"}
+                  </td>
+                  <td style={{ padding: "10px 14px", textAlign: "center" }}>{stock.sector}</td>
+                  <td style={{ padding: "10px 14px", textAlign: "center" }}>{stock.tag}</td>
+                  <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                    {stock.priceChangePercent ? Number(stock.priceChangePercent).toFixed(2) : "-"}
+                  </td>
+                  <td
+                    style={{
+                      padding: "10px 14px",
+                      display: "flex",
+                      gap: 8,
+                      justifyContent: "center",
+                      userSelect: "none",
+                    }}
+                  >
+                    <button
+                      onClick={() => startEdit(stock)}
+                      disabled={loadingSymbol !== null}
+                      style={{
+                        padding: "6px 18px",
+                        fontSize: 14,
+                        borderRadius: 6,
+                        border: "none",
+                        backgroundColor: "#3949ab",
+                        color: "#fff",
+                        fontWeight: 700,
+                        cursor: loadingSymbol !== null ? "not-allowed" : "pointer",
+                        boxShadow: "0 2px 5px rgba(57,73,171,0.5)",
+                        transition: "background-color 0.3s ease",
+                        userSelect: "none",
+                      }}
+                    >
+                      編集
+                    </button>
+                    <button
+                      onClick={() => deleteStock(stock.symbol)}
+                      disabled={loadingSymbol !== null}
+                      style={{
+                        padding: "6px 18px",
+                        fontSize: 14,
+                        borderRadius: 6,
+                        border: "1px solid #cfd8dc",
+                        backgroundColor: "#fff",
+                        color: "#455a64",
+                        fontWeight: 700,
+                        cursor: loadingSymbol !== null ? "not-allowed" : "pointer",
+                        userSelect: "none",
+                      }}
+                    >
+                      削除
+                    </button>
+                  </td>
+                </tr>
+              )
+            )}
+          </tbody>
+        </table>
+      </section>
     </div>
   );
 }
