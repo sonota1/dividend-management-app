@@ -1,169 +1,90 @@
 import React, { useState } from 'react';
+import { Sparklines, SparklinesLine } from 'react-sparklines';
 
-export default function PortfolioApp() {
-  const [stocks, setStocks] = useState([]);
-  const [showStockModal, setShowStockModal] = useState(false);
-  const [formStock, setFormStock] = useState({
-    symbol: '',
-    name: '',
-    shares: '',
-    averagePrice: '',
-    country: 'US',
-    sector: 'Technology'
-  });
-  const [editStock, setEditStock] = useState(null);
+const stockNames = ['トヨタ', 'ソニー', '任天堂', '楽天', '日産', 'ホンダ'];
 
-  // 新規追加モーダル
-  const openAddStockModal = () => {
-    setEditStock(null);
-    setFormStock({
-      symbol: '',
-      name: '',
-      shares: '',
-      averagePrice: '',
-      country: 'US',
-      sector: 'Technology'
-    });
-    setShowStockModal(true);
-  };
+// 仮の配当推移データ（銘柄ごとに用意）
+const dividendHistory = {
+  トヨタ: [2, 2.5, 3, 3.5, 4, 4.5, 5],
+  ソニー: [1, 1.5, 2, 2.5, 3, 3.5, 4],
+  任天堂: [3, 3.5, 4, 4.5, 5, 5.5, 6],
+  楽天: [0.5, 0.6, 0.8, 1, 1.2, 1.5, 1.8],
+  日産: [1, 1.1, 1.3, 1.4, 1.6, 1.8, 2],
+  ホンダ: [1.5, 1.7, 1.9, 2, 2.2, 2.4, 2.5],
+};
 
-  // 編集モーダル
-  const openEditStockModal = (stock) => {
-    setEditStock(stock);
-    setFormStock(stock);
-    setShowStockModal(true);
-  };
+export default function StockAutocompleteWithSparkline() {
+  const [input, setInput] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [selectedStock, setSelectedStock] = useState(null);
 
-  // 保存処理
-  const saveStock = () => {
-    if (editStock) {
-      setStocks(stocks.map(s => (s.id === editStock.id ? { ...formStock, id: editStock.id } : s)));
-    } else {
-      setStocks([...stocks, { ...formStock, id: Date.now() }]);
+  const onChange = (e) => {
+    const val = e.target.value;
+    setInput(val);
+
+    if (val.length === 0) {
+      setSuggestions([]);
+      setSelectedStock(null);
+      return;
     }
-    setShowStockModal(false);
-  };
 
-  // 削除処理
-  const deleteStock = (id) => {
-    if (window.confirm('この銘柄を削除しますか？')) {
-      setStocks(stocks.filter(s => s.id !== id));
-    }
-  };
-
-  // モーダルUI
-  const StockModal = () => {
-    if (!showStockModal) return null;
-    return (
-      <div style={{
-        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.4)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 1000
-      }}>
-        <div style={{
-          backgroundColor: 'white', padding: 20, borderRadius: 12, width: '90%', maxWidth: 400,
-          boxShadow: '0 4px 15px rgba(0,0,0,0.2)', animation: 'fadeIn 0.2s ease-out'
-        }}>
-          <h3 style={{ marginBottom: 15, textAlign: 'center' }}>
-            {editStock ? '📄 銘柄編集' : '➕ 銘柄追加'}
-          </h3>
-          {['symbol','name','shares','averagePrice'].map(field => (
-            <input
-              key={field}
-              type={['shares','averagePrice'].includes(field) ? 'number' : 'text'}
-              placeholder={
-                field === 'symbol' ? '銘柄コード' :
-                field === 'name' ? '会社名' :
-                field === 'shares' ? '株数' : '平均取得価格'
-              }
-              value={formStock[field]}
-              onChange={e => setFormStock({ ...formStock, [field]: e.target.value })}
-              style={{
-                width: '100%', padding: '10px', marginBottom: '10px',
-                border: '1px solid #ccc', borderRadius: '8px'
-              }}
-            />
-          ))}
-          <select
-            value={formStock.country}
-            onChange={e => setFormStock({ ...formStock, country: e.target.value })}
-            style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '8px', border: '1px solid #ccc' }}
-          >
-            <option value="US">米国</option>
-            <option value="JP">日本</option>
-          </select>
-          <select
-            value={formStock.sector}
-            onChange={e => setFormStock({ ...formStock, sector: e.target.value })}
-            style={{ width: '100%', padding: '10px', marginBottom: '15px', borderRadius: '8px', border: '1px solid #ccc' }}
-          >
-            <option value="Technology">テクノロジー</option>
-            <option value="Healthcare">ヘルスケア</option>
-            <option value="Finance">金融</option>
-          </select>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              onClick={saveStock}
-              style={{ flex: 1, padding: '10px', backgroundColor: '#4caf50', color: 'white', borderRadius: '8px', border: 'none' }}
-            >
-              保存
-            </button>
-            <button
-              onClick={() => setShowStockModal(false)}
-              style={{ flex: 1, padding: '10px', backgroundColor: '#999', color: 'white', borderRadius: '8px', border: 'none' }}
-            >
-              キャンセル
-            </button>
-          </div>
-        </div>
-      </div>
+    const filtered = stockNames.filter(name =>
+      name.toLowerCase().includes(val.toLowerCase())
     );
+    setSuggestions(filtered);
   };
 
-  // リスト表示
-  const renderPortfolio = () => (
-    <div style={{ padding: 16, paddingBottom: 100 }}>
-      <h2 style={{ marginBottom: 10 }}>📊 ポートフォリオ</h2>
-      <button
-        onClick={openAddStockModal}
-        style={{ marginBottom: 15, padding: '10px 15px', backgroundColor: '#4caf50', color: 'white', border: 'none', borderRadius: '8px' }}
+  const onSuggestionClick = (suggestion) => {
+    setInput(suggestion);
+    setSuggestions([]);
+    setSelectedStock(suggestion);
+  };
+
+  return (
+    <div style={{ maxWidth: 400, margin: '30px auto', fontFamily: 'sans-serif' }}>
+      <h2>銘柄自動補完フォーム＋配当推移スパークライン</h2>
+
+      <input
+        style={{ width: '100%', padding: '8px', fontSize: '16px', boxSizing: 'border-box' }}
+        value={input}
+        onChange={onChange}
+        placeholder="銘柄名を入力"
+      />
+
+      <ul
+        style={{
+          border: suggestions.length ? '1px solid #ccc' : 'none',
+          padding: 0,
+          marginTop: 0,
+          maxHeight: 150,
+          overflowY: 'auto',
+          backgroundColor: '#fff',
+          listStyle: 'none',
+        }}
       >
-        ＋ 銘柄追加
-      </button>
-      {stocks.map(stock => (
-        <div
-          key={stock.id}
-          style={{
-            backgroundColor: 'white',
-            borderRadius: '10px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-            padding: '12px 15px',
-            marginBottom: 12
-          }}
-        >
-          <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{stock.symbol} - {stock.name}</div>
-          <div style={{ color: '#555', fontSize: '14px' }}>{stock.shares}株 @ {stock.averagePrice}</div>
-          <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-            <button
-              onClick={() => openEditStockModal(stock)}
-              style={{ flex: 1, padding: '8px', backgroundColor: '#2196f3', color: 'white', border: 'none', borderRadius: '6px' }}
-            >
-              編集
-            </button>
-            <button
-              onClick={() => deleteStock(stock.id)}
-              style={{ flex: 1, padding: '8px', backgroundColor: '#f44336', color: 'white', border: 'none', borderRadius: '6px' }}
-            >
-              削除
-            </button>
-          </div>
+        {suggestions.map((s) => (
+          <li
+            key={s}
+            style={{
+              padding: '8px',
+              cursor: 'pointer',
+              borderBottom: '1px solid #eee',
+            }}
+            onClick={() => onSuggestionClick(s)}
+          >
+            {s}
+          </li>
+        ))}
+      </ul>
+
+      {selectedStock && (
+        <div style={{ marginTop: 20 }}>
+          <h3>{selectedStock} の配当推移</h3>
+          <Sparklines data={dividendHistory[selectedStock]} width={300} height={50} margin={5}>
+            <SparklinesLine color="teal" />
+          </Sparklines>
         </div>
-      ))}
-      <StockModal />
+      )}
     </div>
   );
-
-  return renderPortfolio();
 }
