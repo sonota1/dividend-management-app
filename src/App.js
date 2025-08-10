@@ -1,13 +1,21 @@
 import React, { useState, useEffect } from "react";
 
+// --- 定数 ---
+const ASSET_TYPES = ["株式", "債券", "貯金"];
 const RISK_TAGS = ["低リスク", "中リスク", "高リスク"];
-const PURCHASE_TYPES = ["NISA", "iDeCo", "一般"];
+const STOCK_PURCHASE_TYPES = ["NISA", "iDeCo", "一般"];
+const BOND_PURCHASE_TYPES = ["国債", "社債"];
+const DEPOSIT_TYPES = ["普通", "定期"];
 
+// --- 口座管理 ---
 function AccountManager({ accounts, onAddAccount }) {
   const [accountName, setAccountName] = useState("");
 
   const handleAdd = () => {
-    if (!accountName.trim()) return alert("口座名を入力してください");
+    if (!accountName.trim()) {
+      alert("口座名を入力してください");
+      return;
+    }
     onAddAccount({ id: Date.now().toString(), name: accountName.trim() });
     setAccountName("");
   };
@@ -16,15 +24,12 @@ function AccountManager({ accounts, onAddAccount }) {
     <section style={{ marginBottom: 40 }}>
       <h2>口座管理</h2>
       <input
-        type="text"
         placeholder="口座名を入力"
         value={accountName}
         onChange={(e) => setAccountName(e.target.value)}
       />
-      <button onClick={handleAdd} style={{ marginLeft: 8 }}>
-        追加
-      </button>
-      <ul style={{ marginTop: 10 }}>
+      <button onClick={handleAdd}>口座追加</button>
+      <ul>
         {accounts.map((acc) => (
           <li key={acc.id}>{acc.name}</li>
         ))}
@@ -33,32 +38,38 @@ function AccountManager({ accounts, onAddAccount }) {
   );
 }
 
+// --- 資産フォーム ---
 function AssetForm({ accounts, onAddAsset, onUpdateAsset, editingAsset, onCancelEdit }) {
   const [assetType, setAssetType] = useState(editingAsset?.assetType || "株式");
   const [name, setName] = useState(editingAsset?.name || "");
-  const [shares, setShares] = useState(editingAsset?.shares ?? "");
+  const [sharesOrAmount, setSharesOrAmount] = useState(editingAsset?.shares ?? "");
   const [purchasePrice, setPurchasePrice] = useState(editingAsset?.purchasePrice ?? "");
   const [accountId, setAccountId] = useState(editingAsset?.accountId || "");
-  const [riskTag, setRiskTag] = useState(editingAsset?.riskTag || RISK_TAGS[1]);
-  const [purchaseType, setPurchaseType] = useState(editingAsset?.purchaseType || PURCHASE_TYPES[2]);
+  const [riskTag, setRiskTag] = useState(editingAsset?.riskTag || "中リスク");
 
-  useEffect(() => {
+  // 購入種別 or 預金種別
+  const [purchaseType, setPurchaseType] = useState(editingAsset?.purchaseType || (assetType === "貯金" ? "普通" : "一般"));
+  const [bondRating, setBondRating] = useState(editingAsset?.bondRating || "");
+
+  React.useEffect(() => {
     if (editingAsset) {
       setAssetType(editingAsset.assetType);
       setName(editingAsset.name);
-      setShares(editingAsset.shares ?? "");
+      setSharesOrAmount(editingAsset.shares ?? "");
       setPurchasePrice(editingAsset.purchasePrice);
       setAccountId(editingAsset.accountId);
-      setRiskTag(editingAsset.riskTag || RISK_TAGS[1]);
-      setPurchaseType(editingAsset.purchaseType || PURCHASE_TYPES[2]);
+      setRiskTag(editingAsset.riskTag || "中リスク");
+      setPurchaseType(editingAsset.purchaseType || (editingAsset.assetType === "貯金" ? "普通" : "一般"));
+      setBondRating(editingAsset.bondRating || "");
     } else {
       setAssetType("株式");
       setName("");
-      setShares("");
+      setSharesOrAmount("");
       setPurchasePrice("");
       setAccountId("");
-      setRiskTag(RISK_TAGS[1]);
-      setPurchaseType(PURCHASE_TYPES[2]);
+      setRiskTag("中リスク");
+      setPurchaseType("一般");
+      setBondRating("");
     }
   }, [editingAsset]);
 
@@ -76,8 +87,12 @@ function AssetForm({ accounts, onAddAsset, onUpdateAsset, editingAsset, onCancel
         return;
       }
     } else {
-      if (!shares || !purchasePrice) {
-        alert("株数と取得価格を入力してください");
+      if (!sharesOrAmount || !purchasePrice) {
+        alert("保有数または保有額と取得価格を入力してください");
+        return;
+      }
+      if (assetType === "債券" && !purchaseType) {
+        alert("購入種別（国債・社債）を選択してください");
         return;
       }
     }
@@ -85,27 +100,31 @@ function AssetForm({ accounts, onAddAsset, onUpdateAsset, editingAsset, onCancel
     const assetData = {
       assetType,
       name: name.trim(),
-      shares: assetType === "貯金" ? null : Number(shares),
+      shares: assetType === "貯金" ? null : Number(sharesOrAmount),
       purchasePrice: Number(purchasePrice),
       accountId,
       riskTag,
-      purchaseType,
+      purchaseType: assetType === "貯金" ? undefined : purchaseType,
+      bondRating: assetType === "債券" ? bondRating : undefined,
+      depositType: assetType === "貯金" ? purchaseType : undefined,
+      id: editingAsset ? editingAsset.id : Date.now().toString(),
     };
 
     if (editingAsset) {
-      onUpdateAsset({ ...editingAsset, ...assetData });
+      onUpdateAsset(assetData);
     } else {
-      onAddAsset({ id: Date.now().toString(), ...assetData });
+      onAddAsset(assetData);
     }
 
     // リセット
     setAssetType("株式");
     setName("");
-    setShares("");
+    setSharesOrAmount("");
     setPurchasePrice("");
     setAccountId("");
-    setRiskTag(RISK_TAGS[1]);
-    setPurchaseType(PURCHASE_TYPES[2]);
+    setRiskTag("中リスク");
+    setPurchaseType("一般");
+    setBondRating("");
   };
 
   return (
@@ -119,25 +138,43 @@ function AssetForm({ accounts, onAddAsset, onUpdateAsset, editingAsset, onCancel
             onChange={(e) => setAssetType(e.target.value)}
             disabled={!!editingAsset}
           >
-            <option value="株式">株式</option>
-            <option value="債券">債券</option>
-            <option value="貯金">貯金</option>
+            {ASSET_TYPES.map((type) => (
+              <option key={type} value={type}>{type}</option>
+            ))}
           </select>
         </div>
 
         <div style={{ marginBottom: 10 }}>
-          <label>名称: </label>
+          <label>
+            {assetType === "株式" && "会社名"}
+            {assetType === "債券" && "債券名"}
+            {assetType === "貯金" && "預金先名"}
+            ：
+          </label>
           <input value={name} onChange={(e) => setName(e.target.value)} />
         </div>
 
-        {assetType !== "貯金" ? (
+        {assetType === "貯金" ? (
+          <div style={{ marginBottom: 10 }}>
+            <label>金額（円）: </label>
+            <input
+              type="number"
+              value={purchasePrice}
+              onChange={(e) => setPurchasePrice(e.target.value)}
+            />
+          </div>
+        ) : (
           <>
             <div style={{ marginBottom: 10 }}>
-              <label>保有株数: </label>
+              <label>
+                {assetType === "株式" && "保有株数"}
+                {assetType === "債券" && "保有額（単位など）"}
+                ：
+              </label>
               <input
                 type="number"
-                value={shares}
-                onChange={(e) => setShares(e.target.value)}
+                value={sharesOrAmount}
+                onChange={(e) => setSharesOrAmount(e.target.value)}
               />
             </div>
             <div style={{ marginBottom: 10 }}>
@@ -149,15 +186,6 @@ function AssetForm({ accounts, onAddAsset, onUpdateAsset, editingAsset, onCancel
               />
             </div>
           </>
-        ) : (
-          <div style={{ marginBottom: 10 }}>
-            <label>金額（円）: </label>
-            <input
-              type="number"
-              value={purchasePrice}
-              onChange={(e) => setPurchasePrice(e.target.value)}
-            />
-          </div>
         )}
 
         <div style={{ marginBottom: 10 }}>
@@ -189,19 +217,66 @@ function AssetForm({ accounts, onAddAsset, onUpdateAsset, editingAsset, onCancel
           </select>
         </div>
 
-        <div style={{ marginBottom: 10 }}>
-          <label>購入種別: </label>
-          <select
-            value={purchaseType}
-            onChange={(e) => setPurchaseType(e.target.value)}
-          >
-            {PURCHASE_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* 購入種別 or 預金種別 */}
+        {assetType === "株式" && (
+          <div style={{ marginBottom: 10 }}>
+            <label>購入種別: </label>
+            <select
+              value={purchaseType}
+              onChange={(e) => setPurchaseType(e.target.value)}
+            >
+              {STOCK_PURCHASE_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {assetType === "債券" && (
+          <>
+            <div style={{ marginBottom: 10 }}>
+              <label>購入種別: </label>
+              <select
+                value={purchaseType}
+                onChange={(e) => setPurchaseType(e.target.value)}
+              >
+                {BOND_PURCHASE_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: 10 }}>
+              <label>格付け: </label>
+              <input
+                type="text"
+                placeholder="例：AAA、AAなど"
+                value={bondRating}
+                onChange={(e) => setBondRating(e.target.value)}
+              />
+            </div>
+          </>
+        )}
+
+        {assetType === "貯金" && (
+          <div style={{ marginBottom: 10 }}>
+            <label>預金種別: </label>
+            <select
+              value={purchaseType}
+              onChange={(e) => setPurchaseType(e.target.value)}
+            >
+              {DEPOSIT_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <button type="submit">{editingAsset ? "更新" : "追加"}</button>
         {editingAsset && (
@@ -218,149 +293,153 @@ function AssetForm({ accounts, onAddAsset, onUpdateAsset, editingAsset, onCancel
   );
 }
 
+// --- 資産一覧 ---
 function AssetList({ assets, accounts, onEdit, onDelete }) {
   return (
     <section>
       <h2>資産一覧</h2>
-      {assets.length === 0 ? (
-        <p>登録された資産はありません。</p>
-      ) : (
-        <table
-          border="1"
-          cellPadding="5"
-          cellSpacing="0"
-          style={{ width: "100%", textAlign: "left" }}
-        >
-          <thead>
-            <tr>
-              <th>資産タイプ</th>
-              <th>名称</th>
-              <th>口座名</th>
-              <th>リスクタグ</th>
-              <th>購入種別</th>
-              <th>株数/金額</th>
-              <th>取得価格</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {assets.map((a) => {
-              const account = accounts.find((acc) => acc.id === a.accountId);
-              return (
-                <tr key={a.id}>
-                  <td>{a.assetType}</td>
-                  <td>{a.name}</td>
-                  <td>{account ? account.name : "-"}</td>
-                  <td>{a.riskTag}</td>
-                  <td>{a.purchaseType}</td>
-                  <td>
-                    {a.assetType === "貯金"
-                      ? a.purchasePrice.toLocaleString() + " 円"
-                      : a.shares}
-                  </td>
-                  <td>
-                    {a.assetType === "貯金"
-                      ? "-"
-                      : a.purchasePrice.toLocaleString() + " 円"}
-                  </td>
-                  <td>
-                    <button onClick={() => onEdit(a)}>編集</button>
-                    <button
-                      onClick={() => onDelete(a.id)}
-                      style={{ marginLeft: 10 }}
-                    >
-                      削除
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
+      {assets.length === 0 && <p>登録された資産がありません。</p>}
+      <table border="1" cellPadding="6" cellSpacing="0" style={{ width: "100%" }}>
+        <thead>
+          <tr>
+            <th>資産タイプ</th>
+            <th>名称</th>
+            <th>保有数/額</th>
+            <th>取得価格</th>
+            <th>口座</th>
+            <th>リスク</th>
+            <th>購入種別/預金種別</th>
+            <th>格付け</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {assets.map((a) => {
+            const account = accounts.find((acc) => acc.id === a.accountId);
+            return (
+              <tr key={a.id}>
+                <td>{a.assetType}</td>
+                <td>{a.name}</td>
+                <td>
+                  {a.assetType === "貯金" ? (
+                    a.purchasePrice.toLocaleString()
+                  ) : (
+                    a.shares?.toLocaleString()
+                  )}
+                </td>
+                <td>{a.purchasePrice.toLocaleString()}</td>
+                <td>{account ? account.name : "不明"}</td>
+                <td>{a.riskTag}</td>
+                <td>{a.assetType === "貯金" ? a.depositType : a.purchaseType}</td>
+                <td>{a.assetType === "債券" ? a.bondRating || "-" : "-"}</td>
+                <td>
+                  <button onClick={() => onEdit(a)}>編集</button>
+                  <button onClick={() => onDelete(a.id)} style={{ marginLeft: 5 }}>
+                    削除
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </section>
   );
 }
 
-function AssetSummary({ assets }) {
-  const totalAssets = assets.reduce((acc, a) => {
-    if (a.assetType === "貯金") {
-      return acc + a.purchasePrice;
-    } else {
-      return acc + (a.shares || 0) * a.purchasePrice;
-    }
-  }, 0);
+// --- 資産集計＆チャート表示 ---
+function AssetSummaryAndChart({ assets }) {
+  // 資産タイプごとの合計計算
+  const summary = ASSET_TYPES.reduce((acc, type) => {
+    acc[type] = 0;
+    return acc;
+  }, {});
 
-  const byType = assets.reduce(
-    (acc, a) => {
-      if (a.assetType === "貯金") acc["貯金"] += a.purchasePrice;
-      else if (a.assetType === "株式") acc["株式"] += (a.shares || 0) * a.purchasePrice;
-      else if (a.assetType === "債券") acc["債券"] += (a.shares || 0) * a.purchasePrice;
-      return acc;
-    },
-    { 株式: 0, 債券: 0, 貯金: 0 }
-  );
+  assets.forEach((a) => {
+    // 金額ベースの集計: 
+    // 株式・債券は 保有数 * 取得価格 で計算。貯金は購入価格だけ
+    let value = 0;
+    if (a.assetType === "貯金") {
+      value = a.purchasePrice;
+    } else {
+      value = (a.shares ?? 0) * (a.purchasePrice ?? 0);
+    }
+    summary[a.assetType] += value;
+  });
+
+  // 簡易棒グラフ用スタイル
+  const maxValue = Math.max(...Object.values(summary), 1);
 
   return (
-    <section style={{ marginBottom: 40 }}>
-      <h2>資産サマリー</h2>
-      <p>
-        総資産額:{" "}
-        <strong>{totalAssets.toLocaleString()} 円</strong>
-      </p>
-      <ul>
-        <li>株式: {byType["株式"].toLocaleString()} 円</li>
-        <li>債券: {byType["債券"].toLocaleString()} 円</li>
-        <li>貯金: {byType["貯金"].toLocaleString()} 円</li>
+    <section style={{ marginTop: 40 }}>
+      <h2>資産集計</h2>
+      <ul style={{ listStyle: "none", padding: 0 }}>
+        {ASSET_TYPES.map((type) => (
+          <li key={type} style={{ marginBottom: 10 }}>
+            <strong>{type}</strong> : {summary[type].toLocaleString()} 円
+            <div
+              style={{
+                backgroundColor: "#4caf50",
+                height: 20,
+                width: `${(summary[type] / maxValue) * 100}%`,
+                maxWidth: 600,
+                transition: "width 0.5s ease",
+                marginTop: 4,
+              }}
+            />
+          </li>
+        ))}
       </ul>
     </section>
   );
 }
 
-export default function AssetManagementApp() {
+// --- メイン ---
+export default function AssetManagerApp() {
   const [accounts, setAccounts] = useState([]);
   const [assets, setAssets] = useState([]);
   const [editingAsset, setEditingAsset] = useState(null);
 
-  const addAccount = (acc) => {
-    setAccounts((prev) => [...prev, acc]);
+  // 口座追加
+  const addAccount = (newAccount) => {
+    setAccounts((prev) => [...prev, newAccount]);
   };
 
-  const addAsset = (asset) => {
-    setAssets((prev) => [...prev, asset]);
+  // 資産追加
+  const addAsset = (newAsset) => {
+    setAssets((prev) => [...prev, newAsset]);
   };
 
-  const updateAsset = (updated) => {
-    setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+  // 資産更新
+  const updateAsset = (updatedAsset) => {
+    setAssets((prev) =>
+      prev.map((a) => (a.id === updatedAsset.id ? updatedAsset : a))
+    );
     setEditingAsset(null);
   };
 
+  // 編集開始
+  const editAsset = (asset) => {
+    setEditingAsset(asset);
+  };
+
+  // 編集キャンセル
+  const cancelEdit = () => {
+    setEditingAsset(null);
+  };
+
+  // 削除
   const deleteAsset = (id) => {
     if (window.confirm("本当に削除しますか？")) {
       setAssets((prev) => prev.filter((a) => a.id !== id));
-      if (editingAsset && editingAsset.id === id) {
+      if (editingAsset?.id === id) {
         setEditingAsset(null);
       }
     }
   };
 
-  const startEdit = (asset) => {
-    setEditingAsset(asset);
-  };
-
-  const cancelEdit = () => {
-    setEditingAsset(null);
-  };
-
   return (
-    <div
-      style={{
-        padding: 20,
-        maxWidth: 900,
-        margin: "auto",
-        fontFamily: "Arial, sans-serif",
-      }}
-    >
+    <div style={{ maxWidth: 900, margin: "0 auto", padding: 20 }}>
       <h1>資産運用管理アプリ</h1>
 
       <AccountManager accounts={accounts} onAddAccount={addAccount} />
@@ -373,14 +452,14 @@ export default function AssetManagementApp() {
         onCancelEdit={cancelEdit}
       />
 
-      <AssetSummary assets={assets} />
-
       <AssetList
         assets={assets}
         accounts={accounts}
-        onEdit={startEdit}
+        onEdit={editAsset}
         onDelete={deleteAsset}
       />
+
+      <AssetSummaryAndChart assets={assets} />
     </div>
   );
 }
