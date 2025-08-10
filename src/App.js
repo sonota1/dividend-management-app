@@ -1,406 +1,649 @@
-import React, { useState, useEffect } from 'react';
-import { Sparklines, SparklinesLine } from 'react-sparklines';
+import React, { useState, useEffect, useMemo } from "react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  LineChart,
+  Line,
+  ResponsiveContainer,
+} from "recharts";
 
-// ----- ダミーデータ -----
-const stockNames = ['トヨタ', 'ソニー', '任天堂', '楽天', '日産', 'ホンダ'];
+// === 銘柄管理フォーム（追加・削除・修正） ===
+const StockForm = ({ onAdd, onUpdate, editingStock, onCancelEdit }) => {
+  const [ticker, setTicker] = useState(editingStock?.ticker || "");
+  const [shares, setShares] = useState(editingStock?.shares || "");
+  const [price, setPrice] = useState(editingStock?.price || "");
+  const [dividend, setDividend] = useState(editingStock?.dividendPerShare || "");
+  const [sector, setSector] = useState(editingStock?.sector || "");
+  const [risk, setRisk] = useState(editingStock?.risk || "");
+  const [divType, setDivType] = useState(editingStock?.dividendType || "");
 
-const dividendHistory = {
-  トヨタ: [2, 2.5, 3, 3.5, 4, 4.5, 5],
-  ソニー: [1, 1.5, 2, 2.5, 3, 3.5, 4],
-  任天堂: [3, 3.5, 4, 4.5, 5, 5.5, 6],
-  楽天: [0.5, 0.6, 0.8, 1, 1.2, 1.5, 1.8],
-  日産: [1, 1.1, 1.3, 1.4, 1.6, 1.8, 2],
-  ホンダ: [1.5, 1.7, 1.9, 2, 2.2, 2.4, 2.5],
-};
-
-const sectorOptions = ['自動車', 'IT', '金融', '製造', 'サービス'];
-const riskOptions = ['低', '中', '高'];
-const dividendTypeOptions = ['普通配当', '特別配当'];
-
-export default function StockManagementApp() {
-  // 銘柄一覧
-  const [stocks, setStocks] = useState([
-    { id: 1, name: 'トヨタ', sector: '自動車', risk: '中', dividendType: '普通配当', dividendYield: 3.5, shares: 100, priceChange: 2 },
-    { id: 2, name: 'ソニー', sector: 'IT', risk: '高', dividendType: '普通配当', dividendYield: 1.8, shares: 50, priceChange: 5 },
-    { id: 3, name: '任天堂', sector: 'IT', risk: '中', dividendType: '特別配当', dividendYield: 2.0, shares: 70, priceChange: -1 },
-  ]);
-
-  // フィルター状態
-  const [filters, setFilters] = useState({
-    sector: '',
-    risk: '',
-    dividendType: '',
-  });
-
-  // 並べ替え
-  const [sortKey, setSortKey] = useState('nameAsc');
-
-  // 銘柄自動補完入力
-  const [autocompleteInput, setAutocompleteInput] = useState('');
-  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState([]);
-
-  // 編集フォーム用
-  const [editStock, setEditStock] = useState(null);
-
-  // フィルター変更時
-  const handleFilterChange = (key, value) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
-  };
-
-  // 並べ替え変更時
-  const handleSortChange = (e) => {
-    setSortKey(e.target.value);
-  };
-
-  // フィルターと並べ替えをかけた銘柄リスト作成
-  const filteredStocks = stocks
-    .filter(s => (filters.sector ? s.sector === filters.sector : true))
-    .filter(s => (filters.risk ? s.risk === filters.risk : true))
-    .filter(s => (filters.dividendType ? s.dividendType === filters.dividendType : true));
-
-  const sortedStocks = [...filteredStocks].sort((a, b) => {
-    switch (sortKey) {
-      case 'nameAsc': return a.name.localeCompare(b.name);
-      case 'nameDesc': return b.name.localeCompare(a.name);
-      case 'yieldDesc': return b.dividendYield - a.dividendYield;
-      case 'sharesDesc': return b.shares - a.shares;
-      case 'priceChangeDesc': return b.priceChange - a.priceChange;
-      default: return 0;
+  useEffect(() => {
+    if (editingStock) {
+      setTicker(editingStock.ticker);
+      setShares(editingStock.shares);
+      setPrice(editingStock.price);
+      setDividend(editingStock.dividendPerShare);
+      setSector(editingStock.sector || "");
+      setRisk(editingStock.risk || "");
+      setDivType(editingStock.dividendType || "");
     }
-  });
+  }, [editingStock]);
 
-  // 銘柄追加
-  const addStock = (stock) => {
-    setStocks(prev => [...prev, { ...stock, id: Date.now() }]);
-  };
-
-  // 銘柄削除
-  const deleteStock = (id) => {
-    setStocks(prev => prev.filter(s => s.id !== id));
-    if(editStock && editStock.id === id) setEditStock(null);
-  };
-
-  // 銘柄更新
-  const updateStock = (updated) => {
-    setStocks(prev => prev.map(s => (s.id === updated.id ? updated : s)));
-    setEditStock(null);
-  };
-
-  // 銘柄自動補完候補更新
-  const onAutocompleteChange = (val) => {
-    setAutocompleteInput(val);
-    if (!val) {
-      setAutocompleteSuggestions([]);
-      return;
-    }
-    const filtered = stockNames.filter(n => n.includes(val));
-    setAutocompleteSuggestions(filtered);
-  };
-
-  // 自動補完候補クリック
-  const onAutocompleteSelect = (name) => {
-    setAutocompleteInput(name);
-    setAutocompleteSuggestions([]);
-  };
-
-  // 新規銘柄フォームの入力状態
-  const [newStock, setNewStock] = useState({
-    name: '',
-    sector: '',
-    risk: '',
-    dividendType: '',
-    dividendYield: '',
-    shares: '',
-    priceChange: '',
-  });
-
-  // 新規銘柄入力変更
-  const onNewStockChange = (key, value) => {
-    setNewStock(prev => ({ ...prev, [key]: value }));
-  };
-
-  // 新規銘柄追加 submit
-  const onAddStockSubmit = (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    if (!newStock.name) {
-      alert('銘柄名を入力してください');
-      return;
+    const stock = {
+      ticker: ticker.trim().toUpperCase(),
+      shares: Number(shares),
+      price: Number(price),
+      dividendPerShare: Number(dividend),
+      sector,
+      risk,
+      dividendType: divType,
+      costPerShare: price, // 簡易的に価格を原価に
+      priceHistory: generateDummyPriceHistory(),
+      dividendHistory: generateDummyDividendHistory(),
+    };
+    if (editingStock) {
+      onUpdate(stock);
+    } else {
+      onAdd(stock);
     }
-    addStock({
-      name: newStock.name,
-      sector: newStock.sector,
-      risk: newStock.risk,
-      dividendType: newStock.dividendType,
-      dividendYield: parseFloat(newStock.dividendYield) || 0,
-      shares: parseInt(newStock.shares) || 0,
-      priceChange: parseFloat(newStock.priceChange) || 0,
-    });
-    setNewStock({
-      name: '',
-      sector: '',
-      risk: '',
-      dividendType: '',
-      dividendYield: '',
-      shares: '',
-      priceChange: '',
-    });
+    clearForm();
   };
 
-  // 編集フォーム入力変更
-  const onEditStockChange = (key, value) => {
-    setEditStock(prev => ({ ...prev, [key]: value }));
-  };
-
-  // 編集フォーム submit
-  const onEditStockSubmit = (e) => {
-    e.preventDefault();
-    updateStock(editStock);
+  const clearForm = () => {
+    setTicker("");
+    setShares("");
+    setPrice("");
+    setDividend("");
+    setSector("");
+    setRisk("");
+    setDivType("");
+    onCancelEdit && onCancelEdit();
   };
 
   return (
-    <div style={{ maxWidth: 900, margin: '30px auto', fontFamily: 'sans-serif' }}>
-      <h1>銘柄管理アプリ</h1>
+    <form
+      onSubmit={handleSubmit}
+      style={{
+        marginBottom: 20,
+        padding: 16,
+        border: "1px solid #ddd",
+        borderRadius: 8,
+        maxWidth: 600,
+      }}
+    >
+      <h3>{editingStock ? "銘柄編集" : "銘柄追加"}</h3>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <input
+          required
+          placeholder="銘柄コード"
+          value={ticker}
+          onChange={(e) => setTicker(e.target.value)}
+          style={{ flex: "1 0 120px" }}
+        />
+        <input
+          required
+          type="number"
+          placeholder="保有株数"
+          value={shares}
+          onChange={(e) => setShares(e.target.value)}
+          style={{ flex: "1 0 100px" }}
+          min="0"
+        />
+        <input
+          required
+          type="number"
+          step="0.01"
+          placeholder="現在価格"
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+          style={{ flex: "1 0 100px" }}
+          min="0"
+        />
+        <input
+          required
+          type="number"
+          step="0.01"
+          placeholder="配当/株"
+          value={dividend}
+          onChange={(e) => setDividend(e.target.value)}
+          style={{ flex: "1 0 100px" }}
+          min="0"
+        />
+      </div>
+      <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input
+          placeholder="セクター"
+          value={sector}
+          onChange={(e) => setSector(e.target.value)}
+          style={{ flex: "1 0 150px" }}
+        />
+        <input
+          placeholder="リスク"
+          value={risk}
+          onChange={(e) => setRisk(e.target.value)}
+          style={{ flex: "1 0 150px" }}
+        />
+        <input
+          placeholder="配当タイプ"
+          value={divType}
+          onChange={(e) => setDivType(e.target.value)}
+          style={{ flex: "1 0 150px" }}
+        />
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <button type="submit" style={{ marginRight: 8 }}>
+          {editingStock ? "更新" : "追加"}
+        </button>
+        {editingStock && (
+          <button type="button" onClick={clearForm}>
+            キャンセル
+          </button>
+        )}
+      </div>
+    </form>
+  );
+};
 
-      {/* 自動補完入力 */}
-      <div style={{ marginBottom: 20 }}>
-        <label>
-          銘柄自動補完: 
-          <input
-            value={autocompleteInput}
-            onChange={e => onAutocompleteChange(e.target.value)}
-            style={{ marginLeft: 8, padding: 4, fontSize: 16 }}
-            placeholder="銘柄名を入力"
-          />
-        </label>
-        <ul style={{ border: autocompleteSuggestions.length ? '1px solid #ccc' : 'none', maxHeight: 120, overflowY: 'auto', marginTop: 4, paddingLeft: 0, listStyle: 'none', backgroundColor: 'white' }}>
-          {autocompleteSuggestions.map(s => (
-            <li
-              key={s}
-              onClick={() => onAutocompleteSelect(s)}
-              style={{ padding: 6, cursor: 'pointer', borderBottom: '1px solid #eee' }}
-            >
-              {s}
-            </li>
+// === 銘柄一覧テーブル ===
+const StockList = ({
+  stocks,
+  onEdit,
+  onDelete,
+  filters,
+  setFilters,
+  sortKey,
+  setSortKey,
+}) => {
+  // フィルター処理
+  const filteredStocks = useMemo(() => {
+    return stocks
+      .filter((s) =>
+        filters.sector ? s.sector === filters.sector : true
+      )
+      .filter((s) =>
+        filters.risk ? s.risk === filters.risk : true
+      )
+      .filter((s) =>
+        filters.dividendType ? s.dividendType === filters.dividendType : true
+      );
+  }, [stocks, filters]);
+
+  // 並べ替え処理
+  const sortedStocks = useMemo(() => {
+    const arr = [...filteredStocks];
+    switch (sortKey) {
+      case "tickerAsc":
+        arr.sort((a, b) => a.ticker.localeCompare(b.ticker));
+        break;
+      case "tickerDesc":
+        arr.sort((a, b) => b.ticker.localeCompare(a.ticker));
+        break;
+      case "divYield":
+        arr.sort(
+          (a, b) =>
+            (b.dividendPerShare / b.price || 0) -
+            (a.dividendPerShare / a.price || 0)
+        );
+        break;
+      case "shares":
+        arr.sort((a, b) => b.shares - a.shares);
+        break;
+      case "priceChange":
+        arr.sort((a, b) => {
+          const aChange = a.price - (a.costPerShare || a.price);
+          const bChange = b.price - (b.costPerShare || b.price);
+          return bChange - aChange;
+        });
+        break;
+      default:
+        break;
+    }
+    return arr;
+  }, [filteredStocks, sortKey]);
+
+  // フィルター用選択肢取得
+  const sectors = Array.from(new Set(stocks.map((s) => s.sector).filter(Boolean)));
+  const risks = Array.from(new Set(stocks.map((s) => s.risk).filter(Boolean)));
+  const divTypes = Array.from(new Set(stocks.map((s) => s.dividendType).filter(Boolean)));
+
+  return (
+    <div style={{ maxWidth: 900, margin: "auto", marginBottom: 20 }}>
+      <h3>銘柄一覧</h3>
+
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          flexWrap: "wrap",
+          marginBottom: 10,
+          alignItems: "center",
+        }}
+      >
+        <select
+          value={filters.sector}
+          onChange={(e) => setFilters({ ...filters, sector: e.target.value })}
+        >
+          <option value="">すべてのセクター</option>
+          {sectors.map((sec) => (
+            <option key={sec} value={sec}>
+              {sec}
+            </option>
           ))}
-        </ul>
+        </select>
+
+        <select
+          value={filters.risk}
+          onChange={(e) => setFilters({ ...filters, risk: e.target.value })}
+        >
+          <option value="">すべてのリスク</option>
+          {risks.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={filters.dividendType}
+          onChange={(e) =>
+            setFilters({ ...filters, dividendType: e.target.value })
+          }
+        >
+          <option value="">すべての配当タイプ</option>
+          {divTypes.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </select>
+
+        <select value={sortKey} onChange={(e) => setSortKey(e.target.value)}>
+          <option value="">並べ替えなし</option>
+          <option value="tickerAsc">銘柄名昇順</option>
+          <option value="tickerDesc">銘柄名降順</option>
+          <option value="divYield">配当利回り順</option>
+          <option value="shares">保有株数順</option>
+          <option value="priceChange">値上がり率順</option>
+        </select>
       </div>
 
-      {/* フィルター */}
-      <fieldset style={{ marginBottom: 20 }}>
-        <legend>タグでフィルター</legend>
-        <label>
-          セクター: 
-          <select value={filters.sector} onChange={e => handleFilterChange('sector', e.target.value)} style={{ marginLeft: 6 }}>
-            <option value="">全て</option>
-            {sectorOptions.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </label>
-
-        <label style={{ marginLeft: 20 }}>
-          リスク: 
-          <select value={filters.risk} onChange={e => handleFilterChange('risk', e.target.value)} style={{ marginLeft: 6 }}>
-            <option value="">全て</option>
-            {riskOptions.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </label>
-
-        <label style={{ marginLeft: 20 }}>
-          配当タイプ: 
-          <select value={filters.dividendType} onChange={e => handleFilterChange('dividendType', e.target.value)} style={{ marginLeft: 6 }}>
-            <option value="">全て</option>
-            {dividendTypeOptions.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </label>
-      </fieldset>
-
-      {/* 並べ替え */}
-      <fieldset style={{ marginBottom: 20 }}>
-        <legend>並べ替え</legend>
-        <select value={sortKey} onChange={handleSortChange}>
-          <option value="nameAsc">銘柄名昇順</option>
-          <option value="nameDesc">銘柄名降順</option>
-          <option value="yieldDesc">配当利回り順</option>
-          <option value="sharesDesc">保有株数順</option>
-          <option value="priceChangeDesc">値上がり率順</option>
-        </select>
-      </fieldset>
-
-      {/* 銘柄一覧 */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 20 }}>
+      <table
+        style={{
+          width: "100%",
+          borderCollapse: "collapse",
+          marginBottom: 20,
+        }}
+      >
         <thead>
           <tr>
-            <th style={{ borderBottom: '1px solid #ccc', padding: 8 }}>銘柄名</th>
-            <th style={{ borderBottom: '1px solid #ccc', padding: 8 }}>セクター</th>
-            <th style={{ borderBottom: '1px solid #ccc', padding: 8 }}>リスク</th>
-            <th style={{ borderBottom: '1px solid #ccc', padding: 8 }}>配当タイプ</th>
-            <th style={{ borderBottom: '1px solid #ccc', padding: 8 }}>配当利回り(%)</th>
-            <th style={{ borderBottom: '1px solid #ccc', padding: 8 }}>保有株数</th>
-            <th style={{ borderBottom: '1px solid #ccc', padding: 8 }}>値上がり率(%)</th>
-            <th style={{ borderBottom: '1px solid #ccc', padding: 8 }}>配当推移</th>
-            <th style={{ borderBottom: '1px solid #ccc', padding: 8 }}>操作</th>
+            <th style={thStyle}>銘柄</th>
+            <th style={thStyle}>保有株数</th>
+            <th style={thStyle}>現在価格</th>
+            <th style={thStyle}>配当/株</th>
+            <th style={thStyle}>配当利回り</th>
+            <th style={thStyle}>セクター</th>
+            <th style={thStyle}>リスク</th>
+            <th style={thStyle}>配当タイプ</th>
+            <th style={thStyle}>値上がり率</th>
+            <th style={thStyle}>価格推移</th>
+            <th style={thStyle}>配当推移</th>
+            <th style={thStyle}>操作</th>
           </tr>
         </thead>
         <tbody>
-          {sortedStocks.map(stock => (
-            <tr key={stock.id}>
-              <td style={{ padding: 8 }}>{stock.name}</td>
-              <td style={{ padding: 8 }}>{stock.sector}</td>
-              <td style={{ padding: 8 }}>{stock.risk}</td>
-              <td style={{ padding: 8 }}>{stock.dividendType}</td>
-              <td style={{ padding: 8 }}>{stock.dividendYield.toFixed(2)}</td>
-              <td style={{ padding: 8 }}>{stock.shares}</td>
-              <td style={{ padding: 8 }}>{stock.priceChange.toFixed(2)}</td>
-              <td style={{ padding: 8, width: 120 }}>
-                <Sparklines data={dividendHistory[stock.name] || []} width={100} height={30} margin={4}>
-                  <SparklinesLine color="teal" />
-                </Sparklines>
+          {sortedStocks.map((s) => (
+            <tr key={s.ticker}>
+              <td style={tdStyle}>{s.ticker}</td>
+              <td style={tdStyle}>{s.shares}</td>
+              <td style={tdStyle}>¥{s.price.toFixed(2)}</td>
+              <td style={tdStyle}>¥{s.dividendPerShare.toFixed(2)}</td>
+              <td style={tdStyle}>
+                {((s.dividendPerShare / s.price) * 100).toFixed(2)}%
               </td>
-              <td style={{ padding: 8 }}>
-                <button onClick={() => setEditStock(stock)} style={{ marginRight: 8 }}>編集</button>
-                <button onClick={() => deleteStock(stock.id)}>削除</button>
+              <td style={tdStyle}>{s.sector || "-"}</td>
+              <td style={tdStyle}>{s.risk || "-"}</td>
+              <td style={tdStyle}>{s.dividendType || "-"}</td>
+              <td style={tdStyle}>
+                {((s.price - (s.costPerShare || s.price)) /
+                  (s.costPerShare || s.price || 1) *
+                  100
+                ).toFixed(2)}
+                %
+              </td>
+              <td style={tdStyle}>
+                <Sparkline data={s.priceHistory} color="#8884d8" />
+              </td>
+              <td style={tdStyle}>
+                <Sparkline data={s.dividendHistory} color="#82ca9d" />
+              </td>
+              <td style={tdStyle}>
+                <button onClick={() => onEdit(s)}>編集</button>{" "}
+                <button onClick={() => onDelete(s.ticker)}>削除</button>
               </td>
             </tr>
           ))}
+          {sortedStocks.length === 0 && (
+            <tr>
+              <td colSpan={12} style={{ textAlign: "center", padding: 8 }}>
+                表示する銘柄がありません
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
+    </div>
+  );
+};
 
-      {/* 新規銘柄追加フォーム */}
-      <form onSubmit={onAddStockSubmit} style={{ borderTop: '1px solid #ccc', paddingTop: 20 }}>
-        <h2>銘柄追加</h2>
-        <div style={{ marginBottom: 10 }}>
-          <input
-            placeholder="銘柄名"
-            value={newStock.name}
-            onChange={e => onNewStockChange('name', e.target.value)}
-            style={{ marginRight: 8 }}
-          />
-          <select value={newStock.sector} onChange={e => onNewStockChange('sector', e.target.value)} style={{ marginRight: 8 }}>
-            <option value="">セクター</option>
-            {sectorOptions.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select value={newStock.risk} onChange={e => onNewStockChange('risk', e.target.value)} style={{ marginRight: 8 }}>
-            <option value="">リスク</option>
-            {riskOptions.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select value={newStock.dividendType} onChange={e => onNewStockChange('dividendType', e.target.value)} style={{ marginRight: 8 }}>
-            <option value="">配当タイプ</option>
-            {dividendTypeOptions.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        <div style={{ marginBottom: 10 }}>
-          <input
-            type="number"
-            step="0.01"
-            placeholder="配当利回り(%)"
-            value={newStock.dividendYield}
-            onChange={e => onNewStockChange('dividendYield', e.target.value)}
-            style={{ marginRight: 8, width: 140 }}
-          />
-          <input
-            type="number"
-            placeholder="保有株数"
-            value={newStock.shares}
-            onChange={e => onNewStockChange('shares', e.target.value)}
-            style={{ marginRight: 8, width: 120 }}
-          />
-          <input
-            type="number"
-            step="0.01"
-            placeholder="値上がり率(%)"
-            value={newStock.priceChange}
-            onChange={e => onNewStockChange('priceChange', e.target.value)}
-            style={{ width: 140 }}
-          />
-        </div>
-        <button type="submit">追加</button>
-      </form>
+const thStyle = {
+  borderBottom: "1px solid #ccc",
+  padding: 8,
+  textAlign: "center",
+  backgroundColor: "#f7f7f7",
+};
+const tdStyle = {
+  borderBottom: "1px solid #eee",
+  padding: 6,
+  textAlign: "center",
+};
 
-      {/* 編集フォーム（モーダル的に） */}
-      {editStock && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.4)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 1000,
-          }}
-        >
-          <form
-            onSubmit={onEditStockSubmit}
-            style={{
-              backgroundColor: 'white',
-              padding: 20,
-              borderRadius: 8,
-              width: 400,
-              boxSizing: 'border-box',
-            }}
-          >
-            <h2>銘柄編集</h2>
-            <div style={{ marginBottom: 10 }}>
-              <input
-                value={editStock.name}
-                onChange={e => onEditStockChange('name', e.target.value)}
-                placeholder="銘柄名"
-                style={{ marginRight: 8 }}
-                disabled
-              />
-              <select
-                value={editStock.sector}
-                onChange={e => onEditStockChange('sector', e.target.value)}
-                style={{ marginRight: 8 }}
-              >
-                {sectorOptions.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <select
-                value={editStock.risk}
-                onChange={e => onEditStockChange('risk', e.target.value)}
-                style={{ marginRight: 8 }}
-              >
-                {riskOptions.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <select
-                value={editStock.dividendType}
-                onChange={e => onEditStockChange('dividendType', e.target.value)}
-                style={{ marginRight: 8 }}
-              >
-                {dividendTypeOptions.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <input
-                type="number"
-                step="0.01"
-                value={editStock.dividendYield}
-                onChange={e => onEditStockChange('dividendYield', e.target.value)}
-                style={{ marginRight: 8, width: 140 }}
-                placeholder="配当利回り(%)"
-              />
-              <input
-                type="number"
-                value={editStock.shares}
-                onChange={e => onEditStockChange('shares', e.target.value)}
-                style={{ marginRight: 8, width: 120 }}
-                placeholder="保有株数"
-              />
-              <input
-                type="number"
-                step="0.01"
-                value={editStock.priceChange}
-                onChange={e => onEditStockChange('priceChange', e.target.value)}
-                style={{ width: 140 }}
-                placeholder="値上がり率(%)"
-              />
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <button type="button" onClick={() => setEditStock(null)} style={{ marginRight: 8 }}>
-                キャンセル
-              </button>
-              <button type="submit">更新</button>
-            </div>
-          </form>
-        </div>
-      )}
+// === スパークライン（ミニチャート） ===
+const Sparkline = ({ data, color }) => {
+  if (!data || data.length === 0) return null;
+
+  // 簡易スパークライン描画（SVGで折れ線グラフ）
+  const width = 100;
+  const height = 30;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+
+  const points = data
+    .map((v, i) => {
+      const x = (i / (data.length - 1)) * width;
+      const y = height - ((v - min) / range) * height;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <svg width={width} height={height}>
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        points={points}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+};
+
+// === 総資産・損益サマリーカード ===
+const SummaryCard = ({ holdings }) => {
+  const totalAsset = holdings.reduce((sum, h) => sum + h.price * h.shares, 0);
+  const totalCost = holdings.reduce(
+    (sum, h) => sum + (h.costPerShare ? h.costPerShare * h.shares : 0),
+    0
+  );
+  const totalProfit = totalAsset - totalCost;
+  const totalDividend = holdings.reduce(
+    (sum, h) => sum + h.dividendPerShare * h.shares,
+    0
+  );
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-around",
+        marginBottom: 20,
+        maxWidth: 900,
+        marginLeft: "auto",
+        marginRight: "auto",
+      }}
+    >
+      <div
+        style={{
+          padding: 16,
+          border: "1px solid #ccc",
+          borderRadius: 8,
+          width: "30%",
+          textAlign: "center",
+        }}
+      >
+        <h3>総資産</h3>
+        <p style={{ fontSize: 24, color: "#007bff" }}>
+          ¥{totalAsset.toLocaleString()}
+        </p>
+      </div>
+      <div
+        style={{
+          padding: 16,
+          border: "1px solid #ccc",
+          borderRadius: 8,
+          width: "30%",
+          textAlign: "center",
+        }}
+      >
+        <h3>損益</h3>
+        <p style={{ fontSize: 24, color: totalProfit >= 0 ? "green" : "red" }}>
+          ¥{totalProfit.toLocaleString()}
+        </p>
+      </div>
+      <div
+        style={{
+          padding: 16,
+          border: "1px solid #ccc",
+          borderRadius: 8,
+          width: "30%",
+          textAlign: "center",
+        }}
+      >
+        <h3>年間配当予想</h3>
+        <p style={{ fontSize: 24, color: "#28a745" }}>
+          ¥{totalDividend.toLocaleString()}
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// === 月別配当グラフ ===
+const MonthlyDividendChart = ({ monthlyDividends }) => (
+  <div style={{ width: "100%", height: 300, marginBottom: 40, maxWidth: 900, margin: "auto" }}>
+    <h3>月別配当（過去12ヶ月）</h3>
+    <ResponsiveContainer>
+      <BarChart data={monthlyDividends}>
+        <XAxis dataKey="month" tickFormatter={(str) => str.slice(5)} />
+        <YAxis />
+        <Tooltip formatter={(value) => `¥${value.toLocaleString()}`} />
+        <Bar dataKey="dividend" fill="#82ca9d" />
+      </BarChart>
+    </ResponsiveContainer>
+  </div>
+);
+
+// === 配当推移グラフ（累積配当も含む） ===
+const DividendTrendChart = ({ dividendTrends }) => (
+  <div style={{ width: "100%", height: 350, marginBottom: 40, maxWidth: 900, margin: "auto" }}>
+    <h3>配当推移（税引前・税引後・累積）</h3>
+    <ResponsiveContainer>
+      <LineChart data={dividendTrends}>
+        <XAxis dataKey="month" tickFormatter={(str) => str.slice(5)} />
+        <YAxis />
+        <Tooltip formatter={(value) => `¥${value.toLocaleString()}`} />
+        <Legend verticalAlign="top" height={36} />
+        <Line type="monotone" dataKey="preTax" stroke="#8884d8" name="税引前" />
+        <Line type="monotone" dataKey="postTax" stroke="#82ca9d" name="税引後" />
+        <Line type="monotone" dataKey="cumulative" stroke="#ff7300" name="累積配当額" />
+      </LineChart>
+    </ResponsiveContainer>
+  </div>
+);
+
+// === ダミーデータ生成 ===
+const generateDummyPriceHistory = () => {
+  // 12ヶ月の価格データ (適当に上下動をつける)
+  let base = 100 + Math.random() * 100;
+  return Array.from({ length: 12 }).map(() => {
+    base += (Math.random() - 0.5) * 5;
+    return Math.round(base * 100) / 100;
+  });
+};
+const generateDummyDividendHistory = () => {
+  // 12ヶ月の配当データ
+  return Array.from({ length: 12 }).map(() =>
+    Math.round((Math.random() * 5 + 1) * 100) / 100
+  );
+};
+
+// === メインコンポーネント ===
+export default function App() {
+  const [stocks, setStocks] = useState([
+    {
+      ticker: "AAPL",
+      shares: 10,
+      price: 175,
+      dividendPerShare: 0.88,
+      costPerShare: 160,
+      sector: "テクノロジー",
+      risk: "中",
+      dividendType: "普通配当",
+      priceHistory: generateDummyPriceHistory(),
+      dividendHistory: generateDummyDividendHistory(),
+    },
+    {
+      ticker: "MSFT",
+      shares: 5,
+      price: 320,
+      dividendPerShare: 0.56,
+      costPerShare: 300,
+      sector: "テクノロジー",
+      risk: "低",
+      dividendType: "普通配当",
+      priceHistory: generateDummyPriceHistory(),
+      dividendHistory: generateDummyDividendHistory(),
+    },
+    {
+      ticker: "KO",
+      shares: 20,
+      price: 60,
+      dividendPerShare: 0.45,
+      costPerShare: 55,
+      sector: "消費財",
+      risk: "低",
+      dividendType: "特別配当",
+      priceHistory: generateDummyPriceHistory(),
+      dividendHistory: generateDummyDividendHistory(),
+    },
+  ]);
+  const [editingStock, setEditingStock] = useState(null);
+  const [filters, setFilters] = useState({
+    sector: "",
+    risk: "",
+    dividendType: "",
+  });
+  const [sortKey, setSortKey] = useState("");
+
+  // 銘柄追加
+  const handleAddStock = (stock) => {
+    if (stocks.find((s) => s.ticker === stock.ticker)) {
+      alert("同じ銘柄コードが既に存在します。");
+      return;
+    }
+    setStocks([...stocks, stock]);
+  };
+
+  // 銘柄編集更新
+  const handleUpdateStock = (updatedStock) => {
+    setStocks(
+      stocks.map((s) => (s.ticker === updatedStock.ticker ? updatedStock : s))
+    );
+    setEditingStock(null);
+  };
+
+  // 銘柄削除
+  const handleDeleteStock = (ticker) => {
+    if (window.confirm(`銘柄 ${ticker} を削除しますか？`)) {
+      setStocks(stocks.filter((s) => s.ticker !== ticker));
+      if (editingStock?.ticker === ticker) setEditingStock(null);
+    }
+  };
+
+  // 編集モード開始
+  const handleEditStock = (stock) => {
+    setEditingStock(stock);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // 配当集計（月別）
+  const monthlyDividends = useMemo(() => {
+    // 過去12ヶ月をキーに合計配当計算（かなり単純化）
+    // 月を YYYY-MM形式に固定し毎月配当を均等割り
+    const months = Array.from({ length: 12 }, (_, i) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - (11 - i));
+      return d.toISOString().slice(0, 7);
+    });
+
+    const monthMap = {};
+    months.forEach((m) => (monthMap[m] = 0));
+
+    stocks.forEach(({ dividendPerShare, shares }) => {
+      months.forEach((m) => {
+        monthMap[m] += dividendPerShare * shares;
+      });
+    });
+
+    return months.map((m) => ({ month: m, dividend: Math.round(monthMap[m]) }));
+  }, [stocks]);
+
+  // 累積配当額を計算
+  let cumulativeSum = 0;
+  const dividendTrends = monthlyDividends.map(({ month, dividend }) => {
+    cumulativeSum += dividend;
+    return {
+      month,
+      preTax: dividend,
+      postTax: Math.round(dividend * 0.8),
+      cumulative: cumulativeSum,
+    };
+  });
+
+  return (
+    <div style={{ padding: 16 }}>
+      <h2 style={{ textAlign: "center" }}>配当管理アプリ</h2>
+
+      <StockForm
+        onAdd={handleAddStock}
+        onUpdate={handleUpdateStock}
+        editingStock={editingStock}
+        onCancelEdit={() => setEditingStock(null)}
+      />
+
+      <StockList
+        stocks={stocks}
+        onEdit={handleEditStock}
+        onDelete={handleDeleteStock}
+        filters={filters}
+        setFilters={setFilters}
+        sortKey={sortKey}
+        setSortKey={setSortKey}
+      />
+
+      <SummaryCard holdings={stocks} />
+
+      <MonthlyDividendChart monthlyDividends={monthlyDividends} />
+
+      <DividendTrendChart dividendTrends={dividendTrends} />
     </div>
   );
 }
