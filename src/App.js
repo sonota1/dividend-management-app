@@ -885,7 +885,7 @@ export default function App() {
         </div>
       </SakuraiSection>
       <footer style={{ color: "#e66465", textAlign: "center", marginTop: 38, fontWeight: 600, letterSpacing: 1 }}>
-        © 2025 Portfolio Master - Designed in the spirit of Masahiro Sakurai's UI philosophy.
+        © 2025 Portfolio Master 
       </footer>
     </div>
   );
