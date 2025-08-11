@@ -631,7 +631,7 @@ export default function App() {
           fontSize: 38,
           fontFamily: "'M PLUS 1p', 'Inter', sans-serif",
           textShadow: "0 3px 0 #ffe2e2"
-        }}>Portfolio Master（資産形成 × 桜井政博流UI）</h1>
+        }}>Portfolio Master（資産形成）</h1>
         <div style={{
           fontSize: 16,
           color: "#555",
