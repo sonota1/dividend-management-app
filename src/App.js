@@ -108,6 +108,13 @@ const ASSET_TYPES = [
   "年金",
   "保険",
 ];
+const INCOME_SOURCES = [
+  { key: "株式", color: "#d43b00", label: "株式" },
+  { key: "REIT", color: "#e6b400", label: "REIT" },
+  { key: "投資信託", color: "#1c9cdb", label: "投資信託" },
+  { key: "債券", color: "#6bbb69", label: "債券" },
+  { key: "年金", color: "#6f62b5", label: "年金" },
+];
 
 // --- フォーム初期値 ---
 function getInitialForm(type = "株式") {
@@ -189,8 +196,6 @@ function getInitialForm(type = "株式") {
       return {};
   }
 }
-
-// --- ユーティリティ ---
 function toJPY(amount, currency, usdRate) {
   if (!amount) return 0;
   return currency === "USD" ? amount * usdRate : Number(amount);
@@ -586,8 +591,84 @@ export default function App() {
     await backupToGoogleDrive(assets, "assets-backup.csv", lang);
   }
 
-  // --- 集計 ---
-  // ...（ver.10のまま、ここは省略。必要なら上のver.10を貼り付けてください）...
+  // --- 分析・集計 ---
+  const { total, riskDist, classDist, annualCF, monthlyCF, cfBreakdown } = useMemo(() => {
+    let total = 0;
+    let riskDist = { "低リスク": 0, "中リスク": 0, "高リスク": 0 };
+    let classDist = Object.fromEntries(ASSET_TYPES.map(t => [t, 0]));
+    let annualCF = 0, monthlyCF = 0;
+    let cfBreakdown = Object.fromEntries(INCOME_SOURCES.map(x => [x.key, 0]));
+    for (const a of assets) {
+      let v = 0, cf = 0;
+      switch (a.assetType) {
+        case "株式":
+        case "REIT":
+          v = toJPY(a.currentPrice || a.acquisitionPrice, a.currency, usdRate) * (a.shares || 0);
+          cf = (Number(a.dividendPerShare) || 0) * (Number(a.shares) || 0);
+          break;
+        case "投資信託":
+          v = toJPY(a.currentPrice || a.acquisitionPrice, a.currency, usdRate) * (a.units || 0);
+          cf = ((Number(a.units) || 0) / 10000) * (Number(a.distributionPer10k) || 0);
+          break;
+        case "債券":
+          v = toJPY(a.acquisitionPrice, a.currency, usdRate) * (a.units || 0);
+          if (!a.isZeroCoupon) {
+            cf = (Number(a.units) || 0) * (Number(a.couponRate) || 0) * (Number(a.redemptionPrice) || 0) / 100;
+          }
+          break;
+        case "貯金":
+          v = Number(a.amount) || 0;
+          break;
+        case "年金":
+          v = 0;
+          cf = (Number(a.expectedMonthlyBenefit) || 0) * 12;
+          break;
+        case "保険":
+          v = Number(a.surrenderValue) || 0;
+          break;
+        default: break;
+      }
+      if (a.assetType !== "年金") total += v;
+      riskDist[a.riskTag] += v;
+      classDist[a.assetType] += v;
+      annualCF += cf;
+      if (cfBreakdown[a.assetType] !== undefined) cfBreakdown[a.assetType] += cf;
+    }
+    monthlyCF = annualCF / 12;
+    return { total, riskDist, classDist, annualCF, monthlyCF, cfBreakdown };
+  }, [assets, usdRate]);
+
+  const livingCoverRate = monthlyCF / monthlyLiving * 100;
+
+  // --- 資産成長シミュレーション ---
+  const growthSimData = useMemo(() => {
+    let asset = total;
+    const arr = [];
+    for (let y = 0; y <= simYears; ++y) {
+      arr.push({ year: y, value: Math.round(asset) });
+      asset *= 1 + growthRate;
+    }
+    return arr;
+  }, [total, growthRate, simYears]);
+
+  // --- キャッシュフローシミュレーション ---
+  const cashFlowSim = useMemo(() => {
+    let asset = total;
+    let cf = annualCF;
+    let living = monthlyLiving * 12;
+    let rows = [];
+    for (let y = 0; y <= simYears; ++y) {
+      let withdraw = Math.max(living - cf, 0);
+      rows.push({
+        year: y,
+        asset: Math.max(asset, 0),
+        annualCF: cf,
+        cover: cf / living * 100,
+      });
+      asset = asset * (1 + growthRate) + cf - living;
+    }
+    return rows;
+  }, [total, annualCF, monthlyLiving, growthRate, simYears]);
 
   // --- 資産入力フォーム ---
   function renderForm() {
@@ -709,8 +790,6 @@ export default function App() {
     }
   }
 
-  // ...（集計、グラフ、テーブルのロジックはver.10のまま、必要に応じて追記・調整してください）...
-
   return (
     <div style={{
       fontFamily: "'M PLUS 1p', 'Inter', sans-serif",
@@ -806,7 +885,107 @@ export default function App() {
           </button>
         </form>
       </SakuraiSection>
-      {/* --- 以下、集計・分析・グラフ・テーブル等ver.10の内容をそのまま --- */}
+      {/* --- 分析機能 --- */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 32, margin: "36px 0", alignItems: "flex-start" }}>
+        <SakuraiSection title="生活費カバー率">
+          <div style={{ fontSize: 28, color: livingCoverRate >= 100 ? "#3c8d00" : "#e66465", fontWeight: "bold" }}>
+            {livingCoverRate.toFixed(1)}%
+          </div>
+          <div style={{ color: "#888", fontSize: 14 }}>月間生活費:{monthlyLiving.toLocaleString()}円 / 月</div>
+          <div>月間予想収入:{monthlyCF.toLocaleString()}円</div>
+          <div style={{ marginTop: 6 }}>
+            <label>生活費:
+              <input type="number" value={monthlyLiving} onChange={e => setMonthlyLiving(Number(e.target.value))} style={{
+                width: 100, marginLeft: 8, border: "1px solid #e66465", borderRadius: 7
+              }} />
+              円
+            </label>
+          </div>
+        </SakuraiSection>
+        <SakuraiSection title="資産成長シミュレーション">
+          <div>
+            <label>年利成長率:
+              <input type="number" step="0.001" value={growthRate} onChange={e => setGrowthRate(Number(e.target.value))} style={{
+                width: 70, marginLeft: 6, border: "1px solid #e66465", borderRadius: 7
+              }} />
+              （例: 0.03=3%）
+            </label>
+            <label style={{ marginLeft: 15 }}>
+              シミュレーション年数:
+              <input type="number" value={simYears} min={1} max={60} onChange={e => setSimYears(Number(e.target.value))} style={{
+                width: 60, marginLeft: 6, border: "1px solid #e66465", borderRadius: 7
+              }} />年
+            </label>
+          </div>
+          <LineChart
+            data={growthSimData}
+            label="資産額推移（年）"
+            color="#e66465"
+            width={310}
+            height={110}
+          />
+        </SakuraiSection>
+        <SakuraiSection title="リスク分散状況">
+          <PieChart
+            data={Object.entries(riskDist).map(([label, value]) => ({ label, value }))}
+            colors={["#4caf50", "#ff9800", "#f44336"]}
+            legend={Object.keys(riskDist)}
+          />
+        </SakuraiSection>
+        <SakuraiSection title="資産クラス別構成">
+          <PieChart
+            data={Object.entries(classDist).map(([label, value]) => ({ label, value }))}
+            colors={["#4f98ca", "#a2b8ca", "#ffe066", "#b49a67", "#a9e5bb", "#f6c28b", "#ee7674"]}
+            legend={Object.keys(classDist)}
+          />
+        </SakuraiSection>
+      </div>
+      <SakuraiSection title="年間キャッシュフロー予測">
+        <div style={{ fontSize: 22, color: "#3b6ad4", fontWeight: "bold" }}>
+          合計: {annualCF.toLocaleString()} 円／年　
+          <span style={{ fontSize: 15, color: "#888" }}>
+            （月間: {monthlyCF.toLocaleString()} 円）
+          </span>
+        </div>
+        <div style={{ margin: "9px 0 0 18px", fontSize: 16 }}>
+          {INCOME_SOURCES.map(source => (
+            <div key={source.key}>
+              {source.label}：{cfBreakdown[source.key]?.toLocaleString()} 円／年
+            </div>
+          ))}
+        </div>
+      </SakuraiSection>
+      <SakuraiSection title="キャッシュフローシミュレーション">
+        <LineChart
+          data={cashFlowSim.map(v => ({ year: v.year, value: v.annualCF }))}
+          label="年間配当・分配金・利息収入（年）"
+          color="#72c8b7"
+          width={420}
+          height={100}
+        />
+        <div style={{ margin: "17px 0 0 0" }}>
+          <table style={{ fontSize: 14, minWidth: 600, background: "#fff", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#ffe2e2" }}>
+                <th>年</th>
+                <th>資産額</th>
+                <th>年間CF</th>
+                <th>生活費充足率</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cashFlowSim.map((row, i) => (
+                <tr key={i}>
+                  <td>{row.year}</td>
+                  <td>¥{row.asset.toLocaleString()}</td>
+                  <td>¥{row.annualCF.toLocaleString()}</td>
+                  <td>{row.cover.toFixed(1)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </SakuraiSection>
       <BannerAd lang={lang} />
     </div>
   );
