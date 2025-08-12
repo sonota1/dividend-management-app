@@ -17,6 +17,16 @@ const TEXTS = {
     importCSV: "CSVインポート",
     ok: "OK",
     usage: "資産の入力方法や使い方: 各資産タイプ・項目を入力して追加してください。",
+    add: "追加",
+    search: "検索",
+    exportCSV: "CSV出力",
+    amount: "金額",
+    currency: "通貨",
+    risk: "リスク",
+    label: "ラベル",
+    assetType: "資産種別",
+    annualCF: "年間CF",
+    covered: "生活費カバー率",
   },
   en: {
     settings: "Settings",
@@ -31,6 +41,16 @@ const TEXTS = {
     importCSV: "Import CSV",
     ok: "OK",
     usage: "How to use: Enter and add each asset type and field as needed.",
+    add: "Add",
+    search: "Search",
+    exportCSV: "Export CSV",
+    amount: "Amount",
+    currency: "Currency",
+    risk: "Risk",
+    label: "Label",
+    assetType: "Asset Type",
+    annualCF: "Annual CF",
+    covered: "Living Cost Coverage",
   },
   zh: {
     settings: "设置",
@@ -45,10 +65,20 @@ const TEXTS = {
     importCSV: "导入CSV",
     ok: "OK",
     usage: "使用方法: 请填写各资产类型和项目并添加。",
+    add: "添加",
+    search: "搜索",
+    exportCSV: "导出CSV",
+    amount: "金额",
+    currency: "货币",
+    risk: "风险",
+    label: "标签",
+    assetType: "资产类型",
+    annualCF: "年现金流",
+    covered: "生活费覆盖率",
   }
 };
 
-// --- ここから下はver.10ベース ---
+// --- 定数 ---
 const RISK_TAGS = ["低リスク", "中リスク", "高リスク"];
 const CURRENCIES = ["JPY", "USD"];
 const STOCK_ACCOUNT_TYPES = ["特定口座", "一般口座", "旧NISA", "成長NISA"];
@@ -79,6 +109,7 @@ const ASSET_TYPES = [
   "保険",
 ];
 
+// --- フォーム初期値 ---
 function getInitialForm(type = "株式") {
   switch (type) {
     case "株式":
@@ -158,9 +189,209 @@ function getInitialForm(type = "株式") {
       return {};
   }
 }
+
+// --- ユーティリティ ---
 function toJPY(amount, currency, usdRate) {
   if (!amount) return 0;
   return currency === "USD" ? amount * usdRate : Number(amount);
+}
+
+// --- 桜井政博風UIパーツ ---
+function SakuraiButton({ children, selected, ...props }) {
+  return (
+    <button
+      {...props}
+      style={{
+        marginRight: 10,
+        marginBottom: 7,
+        padding: "10px 24px",
+        borderRadius: 14,
+        border: selected ? "2px solid #e66465" : "2px solid #ddd",
+        background: selected
+          ? "linear-gradient(90deg, #fff6f6 0%, #ffe2e2 100%)"
+          : "linear-gradient(90deg, #f6f6fa 0%, #f9f9ff 100%)",
+        color: selected ? "#e66465" : "#555",
+        fontWeight: selected ? "bold" : "normal",
+        fontSize: 17,
+        boxShadow: selected
+          ? "0 0 0 3px #ffe2e2"
+          : "0 2px 6px rgba(220,220,220,0.11)",
+        outline: "none",
+        cursor: "pointer",
+        transition: "all .2s",
+        borderBottom: selected ? "5px solid #e66465" : "none",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+function SakuraiSection({ title, children }) {
+  return (
+    <section style={{
+      margin: "32px 0 18px 0",
+      background: "rgba(255,255,255,0.94)",
+      borderRadius: 18,
+      padding: "22px 24px 17px 24px",
+      boxShadow: "0 6px 17px -6px #e6646533",
+      borderLeft: "8px solid #e66465"
+    }}>
+      <h3 style={{
+        margin: 0,
+        marginBottom: 10,
+        color: "#e66465",
+        fontWeight: 800,
+        fontSize: 22,
+        letterSpacing: 1,
+        fontFamily: "'M PLUS 1p', 'Inter', sans-serif"
+      }}>{title}</h3>
+      {children}
+    </section>
+  );
+}
+function PieChart({ data, colors, size = 130, legend = [] }) {
+  const sum = data.reduce((a, b) => a + b.value, 0) || 1;
+  let acc = 0;
+  const arcs = data.map((d, i) => {
+    const start = acc;
+    acc += d.value / sum * 360;
+    const end = acc;
+    const r = size / 2;
+    const x1 = r + r * Math.cos((Math.PI * 2 * (start - 90)) / 360);
+    const y1 = r + r * Math.sin((Math.PI * 2 * (start - 90)) / 360);
+    const x2 = r + r * Math.cos((Math.PI * 2 * (end - 90)) / 360);
+    const y2 = r + r * Math.sin((Math.PI * 2 * (end - 90)) / 360);
+    const large = end - start > 180 ? 1 : 0;
+    const path = `M${r},${r} L${x1},${y1} A${r},${r} 0 ${large},1 ${x2},${y2} Z`;
+    return <path key={i} d={path} fill={colors[i % colors.length]} />;
+  });
+  return (
+    <div style={{ display: "flex", gap: 13, alignItems: "center" }}>
+      <svg width={size} height={size} style={{ background: "#fff", borderRadius: "50%" }}>
+        {arcs}
+      </svg>
+      <div>
+        {legend.map((l, i) => (
+          <div key={i} style={{ fontSize: 14, marginBottom: 3 }}>
+            <span style={{
+              display: "inline-block", width: 15, height: 15, background: colors[i % colors.length], marginRight: 7, borderRadius: 3, verticalAlign: "middle"
+            }} />{l}: <b>{data[i].value.toLocaleString()}</b>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+function LineChart({ data, width = 340, height = 120, color = "#e66465", label = "" }) {
+  const minY = Math.min(...data.map(d => d.value));
+  const maxY = Math.max(...data.map(d => d.value));
+  const rangeY = maxY - minY || 1;
+  const n = data.length;
+  const points = data.map((d, i) => {
+    const x = (i / (n - 1)) * (width - 30) + 16;
+    const y = height - 20 - ((d.value - minY) / rangeY) * (height - 35);
+    return [x, y];
+  });
+  const pathD = points.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x},${y}`).join(" ");
+  return (
+    <div style={{ width, height: height + 25 }}>
+      <svg width={width} height={height}>
+        <path d={pathD} fill="none" stroke={color} strokeWidth={3} />
+        {points.map(([x, y], i) => (
+          <circle key={i} cx={x} cy={y} r={2} fill={color} />
+        ))}
+      </svg>
+      <div style={{ textAlign: "center", fontSize: 13, color: "#555" }}>{label}</div>
+    </div>
+  );
+}
+
+// --- CSVエクスポート ---
+function CsvExportButton({ assets, usdRate }) {
+  const csvHeaders = [
+    { label: "資産タイプ", key: "assetType" },
+    { label: "銘柄名/銀行/保険会社", key: (a) => a.name || a.bankName || a.insuranceCompany || "" },
+    { label: "口座種別", key: "accountType" },
+    { label: "数量/口数", key: (a) => a.shares ?? a.units ?? "" },
+    { label: "取得単価/取得価格", key: "acquisitionPrice" },
+    { label: "現在単価", key: "currentPrice" },
+    { label: "配当・分配金", key: (a) => a.dividendPerShare ?? a.distributionPer10k ?? "" },
+    { label: "通貨", key: "currency" },
+    { label: "金額", key: (a) => a.amount ?? a.surrenderValue ?? a.maturityBenefit ?? "" },
+    { label: "預金種別", key: "depositType" },
+    { label: "年金種別", key: "pensionType" },
+    { label: "累計拠出額", key: "totalContribution" },
+    { label: "受給開始年齢", key: "benefitStartAge" },
+    { label: "予想月額受給額", key: "expectedMonthlyBenefit" },
+    { label: "満期日", key: (a) => a.maturityDate || a.maturityDateInsurance || "" },
+    { label: "利率", key: "couponRate" },
+    { label: "償還価格", key: "redemptionPrice" },
+    { label: "格付け", key: "rating" },
+    { label: "ゼロクーポン債", key: (a) => a.isZeroCoupon ? "Yes" : "" },
+    { label: "保険種別", key: "insuranceType" },
+    { label: "月額保険料", key: "monthlyPremium" },
+    { label: "解約返戻金", key: "surrenderValue" },
+    { label: "満期保険金", key: "maturityBenefit" },
+    { label: "保険会社名", key: "insuranceCompany" },
+    { label: "リスクラベル", key: "riskTag" },
+    { label: "ラベル", key: "label" },
+  ];
+
+  function escapeCsv(value) {
+    if (value == null) return "";
+    let s = String(value);
+    if (/[",\r\n]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
+    return s;
+  }
+
+  function handleExport() {
+    const rows = [csvHeaders.map((h) => h.label)];
+    for (const asset of assets) {
+      const row = csvHeaders.map((h) => {
+        let v = typeof h.key === "function" ? h.key(asset) : asset[h.key];
+        if (
+          (h.key === "acquisitionPrice" ||
+            h.key === "currentPrice" ||
+            h.key === "amount" ||
+            h.key === "surrenderValue") &&
+          asset.currency === "USD" &&
+          v
+        ) {
+          v = `${v} (USD) / ${(v * usdRate).toFixed(0)} (JPY)`;
+        }
+        return escapeCsv(v);
+      });
+      rows.push(row);
+    }
+    const csv = rows.map((r) => r.join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const fname = `assets_${new Date().toISOString().replace(/[:\-T]/g, "").slice(0, 12)}.csv`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <button type="button" onClick={handleExport} style={{
+      marginLeft: 16,
+      padding: "10px 22px",
+      borderRadius: 14,
+      border: "none",
+      background: "linear-gradient(135deg, #e66465 0%, #ffd6e0 100%)",
+      color: "#e66465",
+      fontWeight: "bold",
+      fontSize: 15,
+      cursor: "pointer",
+      boxShadow: "0 2px 12px #ffe2e2"
+    }}>
+      CSV出力
+    </button>
+  );
 }
 
 // --- 広告バナー ---
@@ -254,7 +485,6 @@ function SettingsPanel({ lang, setLang, fontSize, setFontSize, show, onClose, on
 
 // --- Google Driveバックアップ（CSVでアップロード） ---
 async function backupToGoogleDrive(data, filename = "assets-backup.csv", lang = "ja") {
-  // Google Cloud Consoleで発行したクライアントIDを設定してください
   const CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
   const SCOPES = "https://www.googleapis.com/auth/drive.file";
   if (!window.gapi) {
@@ -269,13 +499,11 @@ async function backupToGoogleDrive(data, filename = "assets-backup.csv", lang = 
   });
   const auth = window.gapi.auth2.getAuthInstance();
   await auth.signIn();
-  // CSV変換
   const header = Object.keys(data[0] || {});
   const rows = [header, ...data.map(a => header.map(k => a[k]))];
   const csv = rows.map(r => r.map(x =>
     typeof x === "string" && /[",\n]/.test(x) ? `"${x.replace(/"/g, '""')}"` : x
   ).join(",")).join("\r\n");
-  // アップロード
   const file = new Blob([csv], { type: "text/csv" });
   const metadata = { name: filename, mimeType: "text/csv" };
   const form = new FormData();
@@ -294,7 +522,7 @@ async function backupToGoogleDrive(data, filename = "assets-backup.csv", lang = 
   }
 }
 
-// --- ver.10のメイン ---（UI・機能そのまま、設定パネル・広告・多言語・フォントサイズ連動を追加）
+// --- メイン ---
 export default function App() {
   const [assets, setAssets] = useState([]);
   const [selectedType, setSelectedType] = useState("株式");
@@ -308,10 +536,8 @@ export default function App() {
   const [fontSize, setFontSize] = useState("medium");
   const [showSettings, setShowSettings] = useState(false);
 
-  // フォントサイズ反映
   const fontStyles = { small: 13, medium: 16, large: 21 };
 
-  // --- 入力・登録 ---
   function handleFormChange(e) {
     const { name, value, type, checked } = e.target;
     setForm((f) => ({ ...f, [name]: type === "checkbox" ? checked : value }));
@@ -321,9 +547,6 @@ export default function App() {
     setAssets((prev) => [...prev, { ...form }]);
     setForm(getInitialForm(selectedType));
   }
-
-  // --- 集計 ---
-  // ...（ver.10のまま、略）
 
   // --- ファイルインポート ---
   function handleImportCSV(e) {
@@ -359,12 +582,135 @@ export default function App() {
     reader.readAsText(file);
   }
 
-  // --- GoogleDriveバックアップ ---
   async function handleBackupGD() {
     await backupToGoogleDrive(assets, "assets-backup.csv", lang);
   }
 
-  // --- UI ---
+  // --- 集計 ---
+  // ...（ver.10のまま、ここは省略。必要なら上のver.10を貼り付けてください）...
+
+  // --- 資産入力フォーム ---
+  function renderForm() {
+    switch (selectedType) {
+      case "株式":
+      case "REIT":
+        return (
+          <>
+            <input name="name" placeholder="銘柄名" value={form.name} onChange={handleFormChange} required />
+            <input name="acquisitionPrice" type="number" placeholder="取得単価" value={form.acquisitionPrice} onChange={handleFormChange} required />
+            <input name="shares" type="number" placeholder="数量" value={form.shares} onChange={handleFormChange} required />
+            <select name="accountType" value={form.accountType} onChange={handleFormChange}>
+              {STOCK_ACCOUNT_TYPES.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <select name="currency" value={form.currency} onChange={handleFormChange}>
+              {CURRENCIES.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <input name="currentPrice" type="number" placeholder="現在単価（任意）" value={form.currentPrice} onChange={handleFormChange} />
+            <input name="dividendPerShare" type="number" placeholder="一株配当（任意）" value={form.dividendPerShare} onChange={handleFormChange} />
+            <select name="riskTag" value={form.riskTag} onChange={handleFormChange}>
+              {RISK_TAGS.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <input name="label" placeholder="ラベル（任意）" value={form.label} onChange={handleFormChange} />
+          </>
+        );
+      case "投資信託":
+        return (
+          <>
+            <input name="name" placeholder="銘柄名" value={form.name} onChange={handleFormChange} required />
+            <input name="acquisitionPrice" type="number" placeholder="取得単価" value={form.acquisitionPrice} onChange={handleFormChange} required />
+            <input name="units" type="number" placeholder="口数" value={form.units} onChange={handleFormChange} required />
+            <select name="accountType" value={form.accountType} onChange={handleFormChange}>
+              {FUND_ACCOUNT_TYPES.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <select name="currency" value={form.currency} onChange={handleFormChange}>
+              {CURRENCIES.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <input name="currentPrice" type="number" placeholder="現在単価（任意）" value={form.currentPrice} onChange={handleFormChange} />
+            <input name="distributionPer10k" type="number" placeholder="1万口分配金（任意）" value={form.distributionPer10k} onChange={handleFormChange} />
+            <select name="riskTag" value={form.riskTag} onChange={handleFormChange}>
+              {RISK_TAGS.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <input name="label" placeholder="ラベル（任意）" value={form.label} onChange={handleFormChange} />
+          </>
+        );
+      case "貯金":
+        return (
+          <>
+            <input name="bankName" placeholder="銀行名" value={form.bankName} onChange={handleFormChange} required />
+            <input name="amount" type="number" placeholder="金額" value={form.amount} onChange={handleFormChange} required />
+            <select name="depositType" value={form.depositType} onChange={handleFormChange}>
+              {DEPOSIT_TYPES.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <select name="riskTag" value={form.riskTag} onChange={handleFormChange}>
+              {RISK_TAGS.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <input name="label" placeholder="ラベル（任意）" value={form.label} onChange={handleFormChange} />
+          </>
+        );
+      case "年金":
+        return (
+          <>
+            <select name="pensionType" value={form.pensionType} onChange={handleFormChange}>
+              {PENSION_TYPES.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <input name="totalContribution" type="number" placeholder="累計拠出額" value={form.totalContribution} onChange={handleFormChange} />
+            <input name="benefitStartAge" type="number" placeholder="受給開始年齢" value={form.benefitStartAge} onChange={handleFormChange} />
+            <input name="expectedMonthlyBenefit" type="number" placeholder="予想月額受給額" value={form.expectedMonthlyBenefit} onChange={handleFormChange} />
+            <select name="riskTag" value={form.riskTag} onChange={handleFormChange}>
+              {RISK_TAGS.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <input name="label" placeholder="ラベル（任意）" value={form.label} onChange={handleFormChange} />
+          </>
+        );
+      case "債券":
+        return (
+          <>
+            <input name="name" placeholder="債券名" value={form.name} onChange={handleFormChange} required />
+            <input name="units" type="number" placeholder="口数" value={form.units} onChange={handleFormChange} required />
+            <input name="acquisitionPrice" type="number" placeholder="取得価格" value={form.acquisitionPrice} onChange={handleFormChange} required />
+            <input name="maturityDate" type="date" placeholder="満期日" value={form.maturityDate} onChange={handleFormChange} />
+            {!form.isZeroCoupon && (
+              <input name="couponRate" type="number" placeholder="利率" value={form.couponRate} onChange={handleFormChange} />
+            )}
+            <input name="redemptionPrice" type="number" placeholder="償還価格" value={form.redemptionPrice} onChange={handleFormChange} />
+            <input name="rating" placeholder="格付け(任意)" value={form.rating} onChange={handleFormChange} />
+            <label>
+              ゼロクーポン債
+              <input type="checkbox" name="isZeroCoupon" checked={form.isZeroCoupon} onChange={handleFormChange} />
+            </label>
+            <select name="currency" value={form.currency} onChange={handleFormChange}>
+              {CURRENCIES.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <select name="riskTag" value={form.riskTag} onChange={handleFormChange}>
+              {RISK_TAGS.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <input name="label" placeholder="ラベル（任意）" value={form.label} onChange={handleFormChange} />
+          </>
+        );
+      case "保険":
+        return (
+          <>
+            <select name="insuranceType" value={form.insuranceType} onChange={handleFormChange}>
+              {INSURANCE_TYPES.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <input name="monthlyPremium" type="number" placeholder="月額保険料" value={form.monthlyPremium} onChange={handleFormChange} />
+            <input name="surrenderValue" type="number" placeholder="解約返戻金" value={form.surrenderValue} onChange={handleFormChange} />
+            <input name="maturityBenefit" type="number" placeholder="満期保険金" value={form.maturityBenefit} onChange={handleFormChange} />
+            <input name="insuranceCompany" placeholder="保険会社名" value={form.insuranceCompany} onChange={handleFormChange} />
+            <input name="maturityDateInsurance" type="date" placeholder="保険満期日" value={form.maturityDateInsurance} onChange={handleFormChange} />
+            <select name="riskTag" value={form.riskTag} onChange={handleFormChange}>
+              {RISK_TAGS.map((x) => <option key={x}>{x}</option>)}
+            </select>
+            <input name="label" placeholder="ラベル（任意）" value={form.label} onChange={handleFormChange} />
+          </>
+        );
+      default:
+        return null;
+    }
+  }
+
+  // ...（集計、グラフ、テーブルのロジックはver.10のまま、必要に応じて追記・調整してください）...
+
   return (
     <div style={{
       fontFamily: "'M PLUS 1p', 'Inter', sans-serif",
@@ -407,9 +753,7 @@ export default function App() {
           marginTop: 8,
           letterSpacing: 1,
           fontFamily: "'M PLUS 1p', 'Inter', sans-serif"
-        }}>
-          「誰でも直感的・快適に」<b style={{ color: "#e66465" }}>老後資産・キャッシュフロー分析</b>ができるアプリです
-        </div>
+        }}>{TEXTS[lang].usage}</div>
       </header>
       <SettingsPanel
         lang={lang}
@@ -421,8 +765,48 @@ export default function App() {
         onImportCSV={handleImportCSV}
         onBackupGD={handleBackupGD}
       />
-      {/* --- 以降はver.10のまま。省略 --- */}
-      {/* ...資産種別タブ、入力フォーム、集計、グラフ等... */}
+      {/* --- 資産種別タブ --- */}
+      <div style={{ marginBottom: 10 }}>
+        {ASSET_TYPES.map((type) => (
+          <SakuraiButton
+            key={type}
+            selected={selectedType === type}
+            onClick={() => {
+              setSelectedType(type);
+              setForm(getInitialForm(type));
+            }}
+          >
+            {type}
+          </SakuraiButton>
+        ))}
+      </div>
+      {/* --- 入力フォーム --- */}
+      <SakuraiSection title="資産入力">
+        <form onSubmit={handleSubmit} style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(210px,1fr))",
+          gap: 14
+        }}>
+          {renderForm()}
+          <button type="submit" style={{
+            gridColumn: "1/-1",
+            marginTop: 14,
+            padding: "13px 0",
+            borderRadius: 14,
+            background: "linear-gradient(90deg, #e66465 0%, #ffd6e0 100%)",
+            border: "none",
+            color: "#fff",
+            fontWeight: 800,
+            fontSize: 15,
+            letterSpacing: 2,
+            cursor: "pointer",
+            boxShadow: "0 2px 12px #ffe2e2"
+          }}>
+            {TEXTS[lang].add}
+          </button>
+        </form>
+      </SakuraiSection>
+      {/* --- 以下、集計・分析・グラフ・テーブル等ver.10の内容をそのまま --- */}
       <BannerAd lang={lang} />
     </div>
   );
